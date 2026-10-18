@@ -51,8 +51,7 @@ import 'screens/settings/contact_screen.dart';
 import 'screens/settings/support_screen.dart';
 import 'screens/settings/terms_screen.dart';
 import 'package:easy_localization/easy_localization.dart';
-
-final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+import 'utils/nav_key.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {

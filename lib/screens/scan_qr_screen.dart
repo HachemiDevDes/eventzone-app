@@ -24,6 +24,8 @@ import 'package:image/image.dart' as img;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'professional_profile_screen.dart';
 import '../services/business_card_scanner_service.dart';
+import '../services/notification_service.dart';
+import '../widgets/connection_success_dialog.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 
@@ -660,33 +662,56 @@ class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderSt
           
           if (mounted) {
             _laserController.stop();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("scan_qr_added_contact".tr(args: [name, title])),
-                backgroundColor: EventzoneTheme.accentSuccess,
-              ),
-            );
-            Navigator.pushReplacement(
+            setState(() => _isConnecting = false);
+
+            if (uuid != null) {
+              NotificationService().markRecentlyScanned(uuid);
+            }
+
+            final String? jobTitleForDialog = scannedProfile?["job_title"] ??
+                ((company != null && company.isNotEmpty) ? null : title);
+
+            await ConnectionSuccessDialog.show(
               context,
-              MaterialPageRoute(
-                builder: (context) => ProfessionalProfileScreen(
-                  name: name,
-                  title: title,
-                  avatarUrl: avatarUrl,
-                  source: _scanType,
-                  isNew: "true",
-                  email: email,
-                  phone: phone,
-                  website: website,
-                  company: company,
-                  department: department,
-                  address: scannedProfile?["address"],
-                  targetUserId: uuid,
-                  connectionId: connectionId,
-                  socialLinks: scannedProfile?['metadata']?['socials'],
-                  createdAt: DateTime.now().toIso8601String(),
-                ),
-              ),
+              name: name,
+              isScanner: true,
+              title: "Connected! 🎉",
+              jobTitle: jobTitleForDialog,
+              company: company,
+              avatarUrl: avatarUrl,
+              targetUserId: uuid,
+              connectionId: connectionId,
+              email: email,
+              phone: phone,
+              website: website,
+              department: department,
+              address: scannedProfile?["address"],
+              tags: (scannedProfile?['interests'] as List?)?.map((e) => e.toString()).toList(),
+              socialLinks: scannedProfile?['metadata']?['socials'],
+              onViewProfile: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProfessionalProfileScreen(
+                      name: name,
+                      title: title,
+                      avatarUrl: avatarUrl,
+                      source: _scanType,
+                      isNew: "true",
+                      email: email,
+                      phone: phone,
+                      website: website,
+                      company: company,
+                      department: department,
+                      address: scannedProfile?["address"],
+                      targetUserId: uuid,
+                      connectionId: connectionId,
+                      socialLinks: scannedProfile?['metadata']?['socials'],
+                      createdAt: DateTime.now().toIso8601String(),
+                    ),
+                  ),
+                );
+              },
             );
           }
         } catch (e) {
@@ -1763,6 +1788,16 @@ class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderSt
         throw Exception("Your trial/subscription has expired. Please upgrade to save connections.");
       }
 
+      // Fetch scanner profile if we have targetUserId so we can provide sender metadata and save mutual connection
+      Map<String, dynamic>? myProfile;
+      if (targetUserId != null && currentUser != null) {
+        myProfile = await Supabase.instance.client
+            .from('profiles')
+            .select()
+            .eq('id', currentUserId)
+            .maybeSingle();
+      }
+
       // 1. Save connection for the current user
       final newConn = await Supabase.instance.client.from('connections').insert({
         'user_id': currentUserId,
@@ -1778,41 +1813,39 @@ class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderSt
         'company': company,
         'department': department,
         'tags': targetProfile?['interests'] ?? [],
+        'notes': myProfile != null ? jsonEncode({
+          'sender_name': myProfile['full_name'],
+          'sender_title': myProfile['job_title'],
+          'sender_company': myProfile['company_name'],
+          'sender_avatar': myProfile['avatar_url'],
+        }) : null,
       }).select('id').maybeSingle();
       
       final connectionId = newConn?['id'] as String?;
 
-      // 3. Save mutual connection for the scanned user (two-way link)
-      if (targetUserId != null && currentUser != null) {
-        final myProfile = await Supabase.instance.client
-            .from('profiles')
-            .select()
-            .eq('id', currentUserId)
-            .maybeSingle();
+      // 2. Save mutual connection for the scanned user (two-way link)
+      if (targetUserId != null && myProfile != null) {
+        final String myJob = myProfile['job_title'] ?? '';
+        final String myComp = myProfile['company_name'] ?? '';
+        final String myTitle = myJob.isNotEmpty
+            ? (myComp.isNotEmpty ? "$myJob at $myComp" : myJob)
+            : (myComp.isNotEmpty ? "Professional at $myComp" : "Attendee");
 
-        if (myProfile != null) {
-          final String myJob = myProfile['job_title'] ?? '';
-          final String myComp = myProfile['company_name'] ?? '';
-          final String myTitle = myJob.isNotEmpty
-              ? (myComp.isNotEmpty ? "$myJob at $myComp" : myJob)
-              : (myComp.isNotEmpty ? "Professional at $myComp" : "Attendee");
-
-          await Supabase.instance.client.from('connections').insert({
-            'user_id': targetUserId, // Scanned user ID
-            'linked_profile_id': currentUserId, // Mutual link back to scanner
-            'name': myProfile['full_name'] ?? 'Eventzone User',
-            'title': myTitle,
-            'avatar_url': myProfile['avatar_url'] ?? '',
-            'source': 'QR Code',
-            'is_new': true,
-            'email': myProfile['email'],
-            'phone': myProfile['phone'],
-            'website': myProfile['website'],
-            'company': myComp,
-            'department': myProfile['department'],
-            'tags': myProfile['interests'] ?? [],
-          });
-        }
+        await Supabase.instance.client.from('connections').insert({
+          'user_id': targetUserId, // Scanned user ID
+          'linked_profile_id': currentUserId, // Mutual link back to scanner
+          'name': myProfile['full_name'] ?? 'Eventzone User',
+          'title': myTitle,
+          'avatar_url': myProfile['avatar_url'] ?? '',
+          'source': 'QR Code',
+          'is_new': true,
+          'email': myProfile['email'],
+          'phone': myProfile['phone'],
+          'website': myProfile['website'],
+          'company': myComp,
+          'department': myProfile['department'],
+          'tags': myProfile['interests'] ?? [],
+        });
       }
       
       return connectionId;

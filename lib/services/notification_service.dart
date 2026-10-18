@@ -6,6 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
+import '../utils/nav_key.dart';
+import '../widgets/connection_success_dialog.dart';
+import '../screens/professional_profile_screen.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -14,6 +17,19 @@ class NotificationService {
 
   final FlutterLocalNotificationsPlugin _localNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
+
+  final Set<String> _recentlyScannedUserIds = {};
+
+  void markRecentlyScanned(String targetUserId) {
+    _recentlyScannedUserIds.add(targetUserId);
+    Future.delayed(const Duration(seconds: 15), () {
+      _recentlyScannedUserIds.remove(targetUserId);
+    });
+  }
+
+  bool isRecentlyScanned(String userId) {
+    return _recentlyScannedUserIds.contains(userId);
+  }
 
   Future<void> initialize() async {
     // 1. Initialize Firebase (if configured)
@@ -49,7 +65,39 @@ class NotificationService {
       settings: initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
         debugPrint("Notification clicked: ${response.payload}");
-        // TODO: Handle navigation when notification is tapped
+        final payloadStr = response.payload;
+        if (payloadStr != null && payloadStr.isNotEmpty) {
+          try {
+            final data = jsonDecode(payloadStr);
+            if (data is Map && data['type'] == 'connection') {
+              final ctx = rootNavigatorKey.currentContext;
+              if (ctx != null) {
+                Navigator.of(ctx).push(
+                  MaterialPageRoute(
+                    builder: (context) => ProfessionalProfileScreen(
+                      name: data['name'] ?? 'Attendee',
+                      title: data['title'] ?? '',
+                      avatarUrl: data['avatarUrl'] ?? '',
+                      targetUserId: data['userId'],
+                      connectionId: data['connectionId'],
+                      email: data['email'],
+                      phone: data['phone'],
+                      website: data['website'],
+                      company: data['company'],
+                      department: data['department'],
+                      address: data['address'],
+                      source: 'Notification',
+                      isNew: 'true',
+                      createdAt: DateTime.now().toIso8601String(),
+                    ),
+                  ),
+                );
+              }
+            }
+          } catch (e) {
+            debugPrint("Error handling notification click response: $e");
+          }
+        }
       },
     );
 
@@ -174,9 +222,29 @@ class NotificationService {
             // Ignore if self-created
             if (senderId == user.id) return;
 
-            // Extract sender name from notes or database
-            String partnerName = 'Someone';
-            if (newConn['notes'] != null && newConn['notes'].toString().isNotEmpty) {
+            // Ignore if this connection was just created by scanning on THIS device
+            if (senderId != null && isRecentlyScanned(senderId)) {
+              debugPrint("Skipping notification for $senderId: recently scanned on this device.");
+              return;
+            }
+
+            // Extract sender full profile from database
+            Map<String, dynamic>? senderProfile;
+            if (senderId != null) {
+              try {
+                senderProfile = await Supabase.instance.client
+                    .from('profiles')
+                    .select()
+                    .eq('id', senderId)
+                    .maybeSingle();
+              } catch (e) {
+                debugPrint("Error fetching sender profile: $e");
+              }
+            }
+
+            // Extract sender name
+            String partnerName = senderProfile?['full_name']?.toString().trim() ?? '';
+            if (partnerName.isEmpty && newConn['notes'] != null && newConn['notes'].toString().isNotEmpty) {
               try {
                 final notes = jsonDecode(newConn['notes'].toString());
                 if (notes is Map && notes['sender_name'] != null && notes['sender_name'].toString().trim().isNotEmpty) {
@@ -184,19 +252,16 @@ class NotificationService {
                 }
               } catch (_) {}
             }
-
-            if (partnerName == 'Someone' && senderId != null) {
-              try {
-                final senderRes = await Supabase.instance.client
-                    .from('profiles')
-                    .select('full_name')
-                    .eq('id', senderId)
-                    .maybeSingle();
-                if (senderRes != null && senderRes['full_name'] != null && senderRes['full_name'].toString().trim().isNotEmpty) {
-                  partnerName = senderRes['full_name'].toString().trim();
-                }
-              } catch (_) {}
+            if (partnerName.isEmpty) {
+              partnerName = 'Someone';
             }
+
+            final String job = senderProfile?['job_title']?.toString().trim() ?? '';
+            final String comp = senderProfile?['company_name']?.toString().trim() ?? '';
+            final String partnerTitle = job.isNotEmpty
+                ? (comp.isNotEmpty ? "$job at $comp" : job)
+                : (comp.isNotEmpty ? "Professional at $comp" : "Eventzone Attendee");
+            final String partnerAvatar = senderProfile?['avatar_url']?.toString().trim() ?? '';
 
             if (status == 'pending') {
               showLocalNotification(
@@ -209,10 +274,63 @@ class NotificationService {
                 body: '$partnerName accepted your connection request.',
               );
             } else {
+              // Retrieve mutual connection ID on recipient side if it exists
+              String? connectionId;
+              if (senderId != null) {
+                try {
+                  final connRes = await Supabase.instance.client
+                      .from('connections')
+                      .select('id')
+                      .eq('user_id', user.id)
+                      .eq('linked_profile_id', senderId)
+                      .maybeSingle();
+                  connectionId = connRes?['id']?.toString();
+                } catch (_) {}
+              }
+
+              // 1. Trigger System Notification (Tray / Background)
               showLocalNotification(
-                title: 'New Connection!',
+                title: 'New Connection! 🎉',
                 body: '$partnerName connected with you.',
+                payload: jsonEncode({
+                  'type': 'connection',
+                  'userId': senderId,
+                  'connectionId': connectionId,
+                  'name': partnerName,
+                  'title': partnerTitle,
+                  'avatarUrl': partnerAvatar,
+                  'company': comp,
+                  'jobTitle': job,
+                  'email': senderProfile?['email'],
+                  'phone': senderProfile?['phone'],
+                  'website': senderProfile?['website'],
+                  'department': senderProfile?['department'],
+                  'address': senderProfile?['address'],
+                }),
               );
+
+              // 2. Trigger In-App Pop-up Celebration Dialog (Foreground)
+              final navContext = rootNavigatorKey.currentContext;
+              if (navContext != null && navContext.mounted) {
+                ConnectionSuccessDialog.show(
+                  navContext,
+                  name: partnerName,
+                  isScanner: false,
+                  title: "New Connection! 🎉",
+                  jobTitle: job.isNotEmpty ? job : null,
+                  company: comp.isNotEmpty ? comp : null,
+                  avatarUrl: partnerAvatar,
+                  targetUserId: senderId,
+                  connectionId: connectionId,
+                  email: senderProfile?['email'],
+                  phone: senderProfile?['phone'],
+                  website: senderProfile?['website'],
+                  department: senderProfile?['department'],
+                  address: senderProfile?['address'],
+                  tags: (senderProfile?['interests'] as List?)?.map((e) => e.toString()).toList(),
+                  socialLinks: senderProfile?['metadata']?['socials'],
+                );
+              }
             }
           },
         )

@@ -42,7 +42,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> with SingleTicker
       
       // Native in-app Google Sign-In flow (serverClientId requests the ID token for Supabase)
       final googleSignIn = GoogleSignIn(
-        serverClientId: '776224860515-7km7k2q9oa0vrfmc7vtk66kbdl1sjmng.apps.googleusercontent.com',
+        serverClientId: '776224860515-g8d5soa83l2mhlie325q2l9gmbegp2j1.apps.googleusercontent.com',
         scopes: const ['email', 'profile'],
       );
       
