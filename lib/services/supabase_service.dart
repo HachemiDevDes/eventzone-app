@@ -1954,11 +1954,37 @@ class SupabaseService {
   // 📅 Create a new meeting request
   Future<bool> createMeeting(MeetingModel meeting) async {
     try {
-      await _supabase.from('meetings').insert(meeting.toJson());
+      final inserted = await _supabase
+          .from('meetings')
+          .insert(meeting.toJson())
+          .select('id')
+          .maybeSingle();
+      final meetingId = inserted?['id']?.toString() ?? meeting.id;
 
       // Fetch organizer name to notify attendee
       final currentUserId = _supabase.auth.currentUser?.id;
       final organizerId = meeting.organizerId.isNotEmpty ? meeting.organizerId : (currentUserId ?? '');
+
+      // Post meeting request message into the direct chat between organizer and attendee
+      try {
+        await _supabase.from('messages').insert({
+          'sender_id': organizerId,
+          'recipient_id': meeting.attendeeId,
+          'content': jsonEncode({
+            'type': 'meeting_request',
+            'meeting_id': meetingId,
+            'title': meeting.title,
+            'date': meeting.date,
+            'start_time': meeting.startTime,
+            'end_time': meeting.endTime,
+            'location': meeting.location,
+            'note': meeting.note,
+            'status': 'pending',
+          }),
+        });
+      } catch (chatMsgErr) {
+        debugPrint('Error inserting meeting chat message: $chatMsgErr');
+      }
 
       String organizerName = 'Someone';
       if (organizerId.isNotEmpty) {
@@ -1986,8 +2012,8 @@ class SupabaseService {
         message: '$organizerName requested a meeting$titleStr$dateStr$timeStr.',
         data: {
           'type': 'meeting_request',
-          'meeting_id': meeting.id,
-          'organizer_id': meeting.organizerId,
+          'meeting_id': meetingId,
+          'organizer_id': organizerId,
           'date': meeting.date,
           'time': meeting.startTime,
         },
@@ -2031,6 +2057,24 @@ class SupabaseService {
             if (profile != null && profile['full_name'] != null && profile['full_name'].toString().trim().isNotEmpty) {
               actorName = profile['full_name'].toString().trim();
             }
+          } catch (_) {}
+        }
+
+        // Post status update message in chat
+        final otherId = currentUserId == attendeeId ? organizerId : attendeeId;
+        if (otherId != null && currentUserId != null) {
+          try {
+            await _supabase.from('messages').insert({
+              'sender_id': currentUserId,
+              'recipient_id': otherId,
+              'content': jsonEncode({
+                'type': 'meeting_status_update',
+                'meeting_id': meetingId,
+                'status': status,
+                'title': title,
+                'actor_name': actorName,
+              }),
+            });
           } catch (_) {}
         }
 
