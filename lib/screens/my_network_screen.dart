@@ -599,14 +599,6 @@ class _MyNetworkScreenState extends ConsumerState<MyNetworkScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        LucideIcons.users,
-                        size: 15,
-                        color: _currentTab == NetworkTab.contacts
-                            ? Colors.white
-                            : Colors.white60,
-                      ),
-                      const SizedBox(width: 5),
                       Flexible(
                         child: Text(
                           "Contacts".tr(),
@@ -617,7 +609,7 @@ class _MyNetworkScreenState extends ConsumerState<MyNetworkScreen> {
                                 ? Colors.white
                                 : Colors.white60,
                             fontWeight: FontWeight.bold,
-                            fontSize: 12.5,
+                            fontSize: 13,
                           ),
                         ),
                       ),
@@ -669,14 +661,6 @@ class _MyNetworkScreenState extends ConsumerState<MyNetworkScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        LucideIcons.userCheck,
-                        size: 15,
-                        color: _currentTab == NetworkTab.requests
-                            ? Colors.white
-                            : Colors.white60,
-                      ),
-                      const SizedBox(width: 5),
                       Flexible(
                         child: Text(
                           "Requests".tr(),
@@ -687,7 +671,7 @@ class _MyNetworkScreenState extends ConsumerState<MyNetworkScreen> {
                                 ? Colors.white
                                 : Colors.white60,
                             fontWeight: FontWeight.bold,
-                            fontSize: 12.5,
+                            fontSize: 13,
                           ),
                         ),
                       ),
@@ -720,7 +704,7 @@ class _MyNetworkScreenState extends ConsumerState<MyNetworkScreen> {
 
             const SizedBox(width: 4),
 
-            // 3. My Meetings Tab
+            // 3. Meetings Tab
             Expanded(
               child: GestureDetector(
                 onTap: () => setState(() => _currentTab = NetworkTab.meetings),
@@ -735,17 +719,9 @@ class _MyNetworkScreenState extends ConsumerState<MyNetworkScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        LucideIcons.calendarCheck,
-                        size: 15,
-                        color: _currentTab == NetworkTab.meetings
-                            ? Colors.white
-                            : Colors.white60,
-                      ),
-                      const SizedBox(width: 5),
                       Flexible(
                         child: Text(
-                          "My Meetings".tr(),
+                          "Meetings".tr(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -753,7 +729,7 @@ class _MyNetworkScreenState extends ConsumerState<MyNetworkScreen> {
                                 ? Colors.white
                                 : Colors.white60,
                             fontWeight: FontWeight.bold,
-                            fontSize: 12.5,
+                            fontSize: 13,
                           ),
                         ),
                       ),
