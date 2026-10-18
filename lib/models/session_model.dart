@@ -187,24 +187,49 @@ class SessionSpeaker {
   });
 
   factory SessionSpeaker.fromJson(Map<String, dynamic> map) {
-    final avatar = map['avatar_url']?.toString() ??
-        map['image']?.toString() ??
-        map['avatar']?.toString() ??
-        map['photo']?.toString() ??
-        map['avatarUrl']?.toString() ??
-        '';
+    // Prioritize actual photos/images over placeholder generators (like ui-avatars.com)
+    final candidates = [
+      map['image'],
+      map['photo'],
+      map['avatar'],
+      map['avatarUrl'],
+      map['avatar_url'],
+      map['picture'],
+      map['profile_image'],
+    ];
+
+    String avatar = '';
+    // 1. Pick any non-empty URL that is NOT a ui-avatars placeholder
+    for (final c in candidates) {
+      final s = c?.toString().trim();
+      if (s != null && s.isNotEmpty && !s.contains('ui-avatars.com')) {
+        avatar = s;
+        break;
+      }
+    }
+    // 2. Fall back to placeholder generator only if no real picture exists
+    if (avatar.isEmpty) {
+      for (final c in candidates) {
+        final s = c?.toString().trim();
+        if (s != null && s.isNotEmpty) {
+          avatar = s;
+          break;
+        }
+      }
+    }
 
     final name = map['name']?.toString() ??
         map['fullName']?.toString() ??
         map['full_name']?.toString() ??
         'Speaker';
 
-    final title = map['jobTitle']?.toString() ??
+    // Prioritize specific speaker title/position before broad jobTitle
+    final title = map['title']?.toString() ??
+        map['jobTitle']?.toString() ??
         map['job_title']?.toString() ??
-        map['title']?.toString() ??
         map['headline']?.toString() ??
         map['position']?.toString() ??
-        map['role']?.toString() ??
+        map['role_title']?.toString() ??
         map['designation']?.toString() ??
         map['ticket_type']?.toString() ??
         '';
@@ -218,6 +243,9 @@ class SessionSpeaker {
         map['organization_name']?.toString() ??
         '';
 
+    final rawRole = map['role']?.toString();
+    final role = (rawRole != null && rawRole.trim().isNotEmpty) ? rawRole.trim() : 'Speaker';
+
     return SessionSpeaker(
       id: map['id']?.toString(),
       name: name.trim().isNotEmpty ? name.trim() : 'Speaker',
@@ -225,7 +253,7 @@ class SessionSpeaker {
       company: company.trim(),
       avatarUrl: avatar.trim(),
       email: map['email']?.toString(),
-      role: map['role']?.toString(),
+      role: role,
       bio: map['bio']?.toString() ?? map['about']?.toString(),
     );
   }

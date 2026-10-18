@@ -34,7 +34,7 @@ function getFirebaseApp() {
 
     if (!clientEmail || !rawPrivateKey) {
       throw new Error(
-        "Firebase Admin credentials are missing. Please add FIREBASE_SERVICE_ACCOUNT (full service account JSON from Firebase Console) in Supabase Dashboard -> Project Settings -> Edge Functions -> Secrets."
+        "Firebase Admin credentials are missing. Please add FIREBASE_SERVICE_ACCOUNT in Supabase Dashboard -> Project Settings -> Edge Functions -> Secrets."
       );
     }
 
@@ -60,7 +60,7 @@ serve(async (req: Request) => {
 
     // 1. Validate inputs
     if (!title || !message || !target) {
-      throw new Error("Missing required parameters")
+      throw new Error("Missing required parameters: title, message, or target")
     }
 
     // 2. Initialize Supabase
@@ -69,48 +69,57 @@ serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // 3. Fetch all active subscriptions to determine paid/free users
-    const { data: subs } = await supabaseClient
-      .from('subscriptions')
-      .select('user_id')
-      .eq('status', 'Active')
-      .gt('end_date', new Date().toISOString())
+    const isBroadcast = target === 'All Users' || target === 'Paid Users' || target === 'Free Users';
 
-    const { data: paidProfiles } = await supabaseClient
-      .from('profiles')
-      .select('id')
-      .gt('subscription_end_date', new Date().toISOString())
+    let paidUserIds = new Set<string>();
+    if (target === 'Paid Users' || target === 'Free Users') {
+      const { data: subs } = await supabaseClient
+        .from('subscriptions')
+        .select('user_id')
+        .eq('status', 'Active')
+        .gt('end_date', new Date().toISOString())
 
-    const paidUserIds = new Set([
-      ...(subs?.map((s) => s.user_id) || []),
-      ...(paidProfiles?.map((p) => p.id) || [])
-    ])
+      const { data: paidProfiles } = await supabaseClient
+        .from('profiles')
+        .select('id')
+        .gt('subscription_end_date', new Date().toISOString())
 
-    // 4. Fetch FCM tokens
-    const { data: tokensData, error: tokensError } = await supabaseClient
-      .from('user_fcm_tokens')
-      .select('user_id, token')
-
-    if (tokensError) {
-      throw new Error("Failed to fetch FCM tokens")
+      paidUserIds = new Set([
+        ...(subs?.map((s) => s.user_id) || []),
+        ...(paidProfiles?.map((p) => p.id) || [])
+      ]);
     }
 
-    // 5. Filter tokens based on target
+    // 3. Fetch FCM tokens (optimized by user_id for direct messages)
+    let tokensQuery = supabaseClient
+      .from('user_fcm_tokens')
+      .select('user_id, token');
+
+    if (!isBroadcast) {
+      tokensQuery = tokensQuery.eq('user_id', target);
+    }
+
+    const { data: tokensData, error: tokensError } = await tokensQuery;
+
+    if (tokensError) {
+      throw new Error(`Failed to fetch FCM tokens: ${tokensError.message}`);
+    }
+
+    // 4. Filter tokens based on target
     let tokensToSend: string[] = []
     
     if (tokensData && tokensData.length > 0) {
       for (const t of tokensData) {
-        if (!t.token) continue;
+        if (!t.token || typeof t.token !== 'string' || !t.token.trim()) continue;
         
-        const isPaid = paidUserIds.has(t.user_id)
         if (target === 'All Users') {
-          tokensToSend.push(t.token)
-        } else if (target === 'Paid Users' && isPaid) {
-          tokensToSend.push(t.token)
-        } else if (target === 'Free Users' && !isPaid) {
-          tokensToSend.push(t.token)
+          tokensToSend.push(t.token.trim())
+        } else if (target === 'Paid Users') {
+          if (paidUserIds.has(t.user_id)) tokensToSend.push(t.token.trim())
+        } else if (target === 'Free Users') {
+          if (!paidUserIds.has(t.user_id)) tokensToSend.push(t.token.trim())
         } else if (target === t.user_id) {
-          tokensToSend.push(t.token)
+          tokensToSend.push(t.token.trim())
         }
       }
     }
@@ -120,16 +129,15 @@ serve(async (req: Request) => {
 
     if (tokensToSend.length === 0) {
       return new Response(
-        JSON.stringify({ success: true, message: "No matching users with push tokens." }),
+        JSON.stringify({ success: true, message: "No matching registered devices with push tokens." }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // 6. Send via Firebase Admin
-    getFirebaseApp(); // Initialize Firebase
+    // 5. Send via Firebase Admin
+    getFirebaseApp();
     const messaging = getMessaging();
 
-    // Firebase multicast allows up to 500 tokens per batch
     const BATCH_SIZE = 500;
     let successCount = 0;
     let failureCount = 0;
@@ -146,12 +154,14 @@ serve(async (req: Request) => {
           notification: {
             channelId: 'high_importance_channel',
             sound: 'default',
+            clickAction: 'FLUTTER_NOTIFICATION_CLICK',
           },
         },
         apns: {
           payload: {
             aps: {
               sound: 'default',
+              badge: 1,
             },
           },
         },
@@ -160,7 +170,7 @@ serve(async (req: Request) => {
 
       if (data && typeof data === 'object') {
         payload.data = Object.fromEntries(
-          Object.entries(data).map(([k, v]) => [k, String(v)])
+          Object.entries(data).map(([k, v]) => [k, String(v ?? '')])
         );
       }
 
@@ -178,7 +188,7 @@ serve(async (req: Request) => {
     )
 
   } catch (error: any) {
-    console.error("Error sending notification:", error)
+    console.error("Error sending push notification:", error)
     return new Response(
       JSON.stringify({ error: error.message, stack: error.stack }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }

@@ -446,7 +446,11 @@ class SupabaseService {
           job = pMap['ticket_type'].toString().trim();
         }
 
-        final avatar = pMap['image']?.toString() ?? '';
+        final avatar = (pMap['image']?.toString() ??
+            pMap['avatar_url']?.toString() ??
+            pMap['avatar']?.toString() ??
+            pMap['photo']?.toString() ??
+            '').trim();
 
         final enriched = {
           'id': pId,
@@ -510,13 +514,20 @@ class SupabaseService {
           if (pLookup.isNotEmpty) {
             return sessions.map((sess) {
               final enrichedSpeakers = sess.speakers.map((spk) {
-                if (spk.company.isNotEmpty && spk.title.isNotEmpty) return spk;
+                if (spk.company.isNotEmpty && spk.title.isNotEmpty && spk.avatarUrl.isNotEmpty && !spk.avatarUrl.contains('ui-avatars.com')) return spk;
                 final match = _matchSpeaker(spk, pLookup);
                 if (match != null) {
+                  final matchAvatar = match['avatar']?.toString().trim() ?? '';
+                  final hasRealSpk = spk.avatarUrl.isNotEmpty && !spk.avatarUrl.contains('ui-avatars.com');
+                  final hasRealMatch = matchAvatar.isNotEmpty && !matchAvatar.contains('ui-avatars.com');
+                  final bestAvatar = hasRealSpk
+                      ? spk.avatarUrl
+                      : (hasRealMatch ? matchAvatar : (spk.avatarUrl.isNotEmpty ? spk.avatarUrl : matchAvatar));
+
                   return spk.copyWith(
                     company: spk.company.isNotEmpty ? spk.company : (match['company']?.toString() ?? ''),
                     title: spk.title.isNotEmpty ? spk.title : (match['title']?.toString() ?? ''),
-                    avatarUrl: spk.avatarUrl.isNotEmpty ? spk.avatarUrl : (match['avatar']?.toString() ?? ''),
+                    avatarUrl: bestAvatar,
                   );
                 }
                 return spk;
@@ -575,10 +586,22 @@ class SupabaseService {
             speakersMap[uniqueKey] = spk;
           } else {
             final existing = speakersMap[uniqueKey]!;
+            final hasRealExisting = existing.avatarUrl.isNotEmpty && !existing.avatarUrl.contains('ui-avatars.com');
+            final hasRealNew = spk.avatarUrl.isNotEmpty && !spk.avatarUrl.contains('ui-avatars.com');
+            final bestAvatar = hasRealExisting
+                ? existing.avatarUrl
+                : (hasRealNew ? spk.avatarUrl : (existing.avatarUrl.isNotEmpty ? existing.avatarUrl : spk.avatarUrl));
+
+            final bestRole = (existing.role != null && existing.role!.isNotEmpty && existing.role != 'Speaker')
+                ? existing.role
+                : ((spk.role != null && spk.role!.isNotEmpty) ? spk.role : existing.role);
+
             speakersMap[uniqueKey] = existing.copyWith(
               company: existing.company.isNotEmpty ? existing.company : spk.company,
               title: existing.title.isNotEmpty ? existing.title : spk.title,
-              avatarUrl: existing.avatarUrl.isNotEmpty ? existing.avatarUrl : spk.avatarUrl,
+              avatarUrl: bestAvatar,
+              role: bestRole,
+              bio: (existing.bio != null && existing.bio!.isNotEmpty) ? existing.bio : spk.bio,
             );
           }
         }
@@ -594,6 +617,7 @@ class SupabaseService {
           final nameKey = 'name:${pName.trim().toLowerCase()}';
           final emailKey = pEmail.isNotEmpty ? 'email:${pEmail.toLowerCase()}' : '';
           final uniqueKey = emailKey.isNotEmpty ? emailKey : nameKey;
+          final pAvatar = (p['avatar']?.toString() ?? '').trim();
 
           if (!speakersMap.containsKey(uniqueKey)) {
             speakersMap[uniqueKey] = SessionSpeaker(
@@ -601,16 +625,23 @@ class SupabaseService {
               name: pName,
               title: p['title']?.toString() ?? '',
               company: p['company']?.toString() ?? '',
-              avatarUrl: p['avatar']?.toString() ?? '',
+              avatarUrl: pAvatar,
               email: pEmail.isNotEmpty ? pEmail : null,
               role: 'Speaker',
             );
           } else {
             final existing = speakersMap[uniqueKey]!;
+            final hasRealExisting = existing.avatarUrl.isNotEmpty && !existing.avatarUrl.contains('ui-avatars.com');
+            final hasRealP = pAvatar.isNotEmpty && !pAvatar.contains('ui-avatars.com');
+            final bestAvatar = hasRealExisting
+                ? existing.avatarUrl
+                : (hasRealP ? pAvatar : (existing.avatarUrl.isNotEmpty ? existing.avatarUrl : pAvatar));
+
             speakersMap[uniqueKey] = existing.copyWith(
               company: existing.company.isNotEmpty ? existing.company : (p['company']?.toString() ?? ''),
               title: existing.title.isNotEmpty ? existing.title : (p['title']?.toString() ?? ''),
-              avatarUrl: existing.avatarUrl.isNotEmpty ? existing.avatarUrl : (p['avatar']?.toString() ?? ''),
+              avatarUrl: bestAvatar,
+              role: (existing.role != null && existing.role!.isNotEmpty) ? existing.role : 'Speaker',
             );
           }
         }

@@ -9,6 +9,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../utils/nav_key.dart';
 import '../widgets/connection_success_dialog.dart';
 import '../screens/professional_profile_screen.dart';
+import '../screens/chat_detail_screen.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -19,6 +20,7 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   final Set<String> _recentlyScannedUserIds = {};
+  String? activeChatRecipientId;
 
   void markRecentlyScanned(String targetUserId) {
     _recentlyScannedUserIds.add(targetUserId);
@@ -29,6 +31,44 @@ class NotificationService {
 
   bool isRecentlyScanned(String userId) {
     return _recentlyScannedUserIds.contains(userId);
+  }
+
+  void _handleNotificationPayload(Map<String, dynamic> data) {
+    final ctx = rootNavigatorKey.currentContext;
+    if (ctx == null || !ctx.mounted) return;
+
+    if (data['type'] == 'message') {
+      Navigator.of(ctx).push(
+        MaterialPageRoute(
+          builder: (context) => ChatDetailScreen(
+            contactName: data['sender_name'] ?? 'Attendee',
+            avatarUrl: data['sender_avatar'] ?? '',
+            recipientId: data['sender_id'],
+          ),
+        ),
+      );
+    } else if (data['type'] == 'connection') {
+      Navigator.of(ctx).push(
+        MaterialPageRoute(
+          builder: (context) => ProfessionalProfileScreen(
+            name: data['name'] ?? 'Attendee',
+            title: data['title'] ?? '',
+            avatarUrl: data['avatarUrl'] ?? '',
+            targetUserId: data['userId'],
+            connectionId: data['connectionId'],
+            email: data['email'],
+            phone: data['phone'],
+            website: data['website'],
+            company: data['company'],
+            department: data['department'],
+            address: data['address'],
+            source: 'Notification',
+            isNew: 'true',
+            createdAt: DateTime.now().toIso8601String(),
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> initialize() async {
@@ -69,30 +109,8 @@ class NotificationService {
         if (payloadStr != null && payloadStr.isNotEmpty) {
           try {
             final data = jsonDecode(payloadStr);
-            if (data is Map && data['type'] == 'connection') {
-              final ctx = rootNavigatorKey.currentContext;
-              if (ctx != null) {
-                Navigator.of(ctx).push(
-                  MaterialPageRoute(
-                    builder: (context) => ProfessionalProfileScreen(
-                      name: data['name'] ?? 'Attendee',
-                      title: data['title'] ?? '',
-                      avatarUrl: data['avatarUrl'] ?? '',
-                      targetUserId: data['userId'],
-                      connectionId: data['connectionId'],
-                      email: data['email'],
-                      phone: data['phone'],
-                      website: data['website'],
-                      company: data['company'],
-                      department: data['department'],
-                      address: data['address'],
-                      source: 'Notification',
-                      isNew: 'true',
-                      createdAt: DateTime.now().toIso8601String(),
-                    ),
-                  ),
-                );
-              }
+            if (data is Map<String, dynamic>) {
+              _handleNotificationPayload(data);
             }
           } catch (e) {
             debugPrint("Error handling notification click response: $e");
@@ -124,12 +142,35 @@ class NotificationService {
 
         // 5. Handle foreground FCM messages
         FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-          debugPrint('Got a message whilst in the foreground!');
+          debugPrint('Got a message whilst in the foreground: ${message.data}');
+          final data = message.data;
+          final senderId = data['sender_id'];
+          if (senderId != null && senderId == activeChatRecipientId) {
+            // Already viewing this active chat
+            return;
+          }
           if (message.notification != null) {
             showLocalNotification(
               title: message.notification!.title ?? 'New Message',
               body: message.notification!.body ?? '',
+              payload: jsonEncode(data),
             );
+          }
+        });
+
+        // 6. Handle notification click when app is opened from background
+        FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+          debugPrint('App opened from push notification: ${message.data}');
+          if (message.data.isNotEmpty) {
+            _handleNotificationPayload(message.data);
+          }
+        });
+
+        // 7. Check if app was opened from terminated state by a notification
+        messaging.getInitialMessage().then((RemoteMessage? message) {
+          if (message != null && message.data.isNotEmpty) {
+            debugPrint('App launched from terminated state via notification: ${message.data}');
+            _handleNotificationPayload(message.data);
           }
         });
       }
@@ -182,20 +223,34 @@ class NotificationService {
           ),
           callback: (payload) async {
             final newMsg = payload.newRecord;
+            final senderId = newMsg['sender_id']?.toString();
             
-            // Only notify if unread and we are not currently on the chat screen
-            // Fetch sender profile for name
+            // If the user is currently on ChatDetailScreen with THIS exact sender, do not show duplicate notification
+            if (senderId != null && senderId == activeChatRecipientId) {
+              return;
+            }
+
+            // Fetch sender profile for name and avatar
             final senderRes = await Supabase.instance.client
                 .from('profiles')
-                .select('full_name')
-                .eq('id', newMsg['sender_id'])
+                .select('full_name, avatar_url')
+                .eq('id', senderId ?? '')
                 .maybeSingle();
                 
             final senderName = senderRes?['full_name'] ?? 'Someone';
+            final senderAvatar = senderRes?['avatar_url'] ?? '';
+            final content = newMsg['content']?.toString() ?? '';
             
             showLocalNotification(
-              title: 'New Message',
-              body: '$senderName sent you a message: ${newMsg['content']}',
+              title: senderName,
+              body: content,
+              payload: jsonEncode({
+                'type': 'message',
+                'sender_id': senderId,
+                'sender_name': senderName,
+                'sender_avatar': senderAvatar,
+                'content': content,
+              }),
             );
           },
         )

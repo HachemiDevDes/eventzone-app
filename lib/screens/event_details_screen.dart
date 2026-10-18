@@ -815,12 +815,32 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
         const SizedBox(height: 32),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text(
-              "Featured Speakers".tr(),
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 20),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Featured Speakers & Keynotes".tr(),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    "Learn directly from leaders steering innovations and market strategies.".tr(),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white.withValues(alpha: 0.6),
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(width: 12),
             GestureDetector(
               onTap: () {
                 Navigator.push(
@@ -845,15 +865,22 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
         SizedBox(
-          height: 176,
+          height: 275,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
             itemCount: _speakers.length,
-            separatorBuilder: (_, index) => const SizedBox(width: 12),
+            separatorBuilder: (_, index) => const SizedBox(width: 14),
             itemBuilder: (context, index) {
               final speaker = _speakers[index];
+              final roleText = (speaker.role != null && speaker.role!.trim().isNotEmpty)
+                  ? speaker.role!.trim()
+                  : "Speaker".tr();
+              final hasCompany = speaker.company.trim().isNotEmpty &&
+                  speaker.company.trim().toLowerCase() != 'eventzone';
+
               return GestureDetector(
                 onTap: () {
                   Navigator.push(
@@ -864,58 +891,108 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
                   );
                 },
                 child: Container(
-                  width: 144,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF161C2C),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _buildSpeakerAvatar(speaker.avatarUrl, speaker.name, size: 50),
-                    const SizedBox(height: 8),
-                    Text(
-                      speaker.name,
-                      style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
+                  width: 205,
+                  padding: const EdgeInsets.fromLTRB(14, 18, 14, 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF141B2D),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      width: 1.2,
                     ),
-                    if (speaker.title.isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        speaker.title,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.75),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w400,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.25),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
                       ),
                     ],
-                    if (speaker.company.isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        speaker.company,
-                        style: const TextStyle(
-                          color: Color(0xFF94A3B8),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // Top Section: Avatar + Name + Role + Title
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          _buildSpeakerAvatar(speaker.avatarUrl, speaker.name, size: 78),
+                          const SizedBox(height: 12),
+                          Text(
+                            speaker.name,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              height: 1.2,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            roleText,
+                            style: const TextStyle(
+                              color: Color(0xFF3B82F6),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                          ),
+                          if (speaker.title.trim().isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              speaker.title.trim(),
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.65),
+                                fontSize: 11,
+                                height: 1.25,
+                                fontWeight: FontWeight.w400,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ],
                       ),
+
+                      // Bottom Section: Divider + Company Name
+                      if (hasCompany) ...[
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Container(
+                              height: 1,
+                              width: double.infinity,
+                              color: Colors.white.withValues(alpha: 0.08),
+                              margin: const EdgeInsets.only(bottom: 8),
+                            ),
+                            Text(
+                              speaker.company.trim().toUpperCase(),
+                              style: const TextStyle(
+                                color: Color(0xFF94A3B8),
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.1,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ] else ...[
+                        const SizedBox(height: 4),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
           ),
         ),
       ],
@@ -1170,16 +1247,57 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
   }
 
   // Helper avatar for speakers
-  Widget _buildSpeakerAvatar(String? avatarUrl, String name, {double size = 48}) {
-    if (avatarUrl != null && avatarUrl.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(size / 2),
-        child: Image.network(
-          avatarUrl,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _buildFallbackSpeakerAvatar(name, size),
+  Widget _buildSpeakerAvatar(String? avatarUrl, String name, {double size = 78}) {
+    final validUrl = avatarUrl?.trim() ?? '';
+    final hasValidUrl = validUrl.isNotEmpty &&
+        (validUrl.startsWith('http://') || validUrl.startsWith('https://')) &&
+        !validUrl.contains('ui-avatars.com');
+
+    if (hasValidUrl) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: const Color(0xFF2563EB).withValues(alpha: 0.45),
+            width: 2.2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF2563EB).withValues(alpha: 0.18),
+              blurRadius: 10,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: ClipOval(
+          child: Image.network(
+            validUrl,
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _buildFallbackSpeakerAvatar(name, size),
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) return child;
+              return Container(
+                color: const Color(0xFF1E2638),
+                child: Center(
+                  child: SizedBox(
+                    width: size * 0.3,
+                    height: size * 0.3,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      value: loadingProgress.expectedTotalBytes != null
+                          ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                          : null,
+                      color: EventzoneTheme.primaryAction,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
         ),
       );
     }
@@ -1187,7 +1305,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
   }
 
   Widget _buildSpeakerMiniAvatar(String? avatarUrl, String name) {
-    if (avatarUrl != null && avatarUrl.isNotEmpty) {
+    if (avatarUrl != null && avatarUrl.isNotEmpty && !avatarUrl.contains('ui-avatars.com')) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: Image.network(
@@ -1203,22 +1321,38 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
   }
 
   Widget _buildFallbackSpeakerAvatar(String name, double size) {
+    final trimmed = name.trim();
+    final parts = trimmed.split(RegExp(r'\s+'));
+    final initials = parts.length >= 2
+        ? "${parts[0][0]}${parts[1][0]}".toUpperCase()
+        : (trimmed.isNotEmpty ? trimmed[0].toUpperCase() : 'S');
+
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: EventzoneTheme.primaryAction.withValues(alpha: 0.2),
         shape: BoxShape.circle,
-        border: Border.all(color: EventzoneTheme.primaryAction.withValues(alpha: 0.4)),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF2563EB).withValues(alpha: 0.35),
+            const Color(0xFF1D4ED8).withValues(alpha: 0.15),
+          ],
+        ),
+        border: Border.all(
+          color: const Color(0xFF2563EB).withValues(alpha: 0.45),
+          width: 2.2,
+        ),
       ),
-      child: Center(
-        child: Text(
-          name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'S',
-          style: TextStyle(
-            color: EventzoneTheme.primaryAction,
-            fontSize: size * 0.4,
-            fontWeight: FontWeight.bold,
-          ),
+      alignment: Alignment.center,
+      child: Text(
+        initials,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: size * 0.34,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.5,
         ),
       ),
     );

@@ -6,6 +6,8 @@ import '../widgets/glass_container.dart';
 import 'professional_profile_screen.dart';
 import '../widgets/meeting_scheduler_sheet.dart';
 import '../utils/avatar_helper.dart';
+import '../services/notification_service.dart';
+import '../services/supabase_service.dart';
 import 'package:easy_localization/easy_localization.dart';
 
 class ChatDetailScreen extends StatefulWidget {
@@ -122,9 +124,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     setState(() {
       _canMessage = true;
     });
+    if (_recipientId != null) {
+      NotificationService().activeChatRecipientId = _recipientId;
+    }
     await _loadMessages();
     _subscribeRealtime();
   }
+
 
   void _navigateToProfile() {
     final details = _resolvedContactDetails;
@@ -277,6 +283,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         'recipient_id': _recipientId,
         'content': text,
       });
+
+      // Asynchronously dispatch push notification to recipient
+      if (_recipientId != null && _recipientId!.isNotEmpty) {
+        _dispatchPushNotification(currentUserId, _recipientId!, text);
+      }
     } catch (e) {
       debugPrint("Error sending message: $e");
       // Remove message on failure
@@ -291,10 +302,46 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       } else {
         errorMsg = "Error: ${e.toString()}";
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errorMsg), backgroundColor: Colors.redAccent),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMsg), backgroundColor: Colors.redAccent),
+        );
+      }
     }
+  }
+
+  void _dispatchPushNotification(
+    String senderId,
+    String recipientId,
+    String messageContent,
+  ) {
+    () async {
+      try {
+        final profile = await _supabase
+            .from('profiles')
+            .select('full_name, avatar_url')
+            .eq('id', senderId)
+            .maybeSingle();
+
+        final String senderName = profile?['full_name']?.toString().trim() ?? 'Eventzone Attendee';
+        final String senderAvatar = profile?['avatar_url']?.toString().trim() ?? '';
+
+        await SupabaseService().sendPushNotification(
+          targetUserId: recipientId,
+          title: senderName,
+          message: messageContent,
+          data: {
+            'type': 'message',
+            'sender_id': senderId,
+            'sender_name': senderName,
+            'sender_avatar': senderAvatar,
+            'content': messageContent,
+          },
+        );
+      } catch (e) {
+        debugPrint("Error dispatching push notification for message: $e");
+      }
+    }();
   }
 
   void _showDeleteDialog(String messageId) {
@@ -433,6 +480,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   @override
   void dispose() {
+    if (NotificationService().activeChatRecipientId == _recipientId) {
+      NotificationService().activeChatRecipientId = null;
+    }
     _messageController.dispose();
     _scrollController.dispose();
     if (_channel != null) {
