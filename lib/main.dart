@@ -166,7 +166,12 @@ class AppBootstrap extends StatelessWidget {
         // Setup deep links once ready
         DeepLinkService().onProfileIdFound = (profileId) {
           if (rootNavigatorKey.currentContext != null) {
-            rootNavigatorKey.currentContext!.go('/profile?id=$profileId');
+            final user = Supabase.instance.client.auth.currentUser;
+            if (user != null) {
+              DeepLinkService().processPendingContact(rootNavigatorKey.currentContext!);
+            } else {
+              rootNavigatorKey.currentContext!.go('/profile?id=$profileId');
+            }
           }
         };
         DeepLinkService().initialize();
@@ -198,6 +203,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     initialLocation: '/',
     refreshListenable: refreshNotifier,
     redirect: (context, state) {
+      final session = Supabase.instance.client.auth.currentSession;
       final user = Supabase.instance.client.auth.currentUser;
       final isLoggedIn = user != null;
       final matchedLocation = state.matchedLocation;
@@ -206,38 +212,56 @@ final routerProvider = Provider<GoRouter>((ref) {
           matchedLocation == '/signin' ||
           matchedLocation == '/signup';
 
-      if (!isLoggedIn) {
-        return isGoingToAuth ? null : '/welcome';
-      }
-
-      // Check if profile data is still loading
-      final profileAsync = ref.read(currentUserProvider);
-      final isProfileLoading = profileAsync.isLoading;
-
+      // 1. Splash screen ('/') initialization handling:
+      // Hold on the splash screen until auth session and user profile are definitively resolved
       if (matchedLocation == '/') {
-        if (isProfileLoading) return null; // Wait briefly while loading
+        if (!isLoggedIn && session == null) {
+          return '/welcome';
+        }
+        final profileAsync = ref.read(currentUserProvider);
+        if (profileAsync.isLoading) return null; // Wait on splash while loading profile
         final onboardingCompleted = ref.read(onboardingStatusProvider);
         return onboardingCompleted ? '/home' : '/onboarding';
       }
 
-      // While profile is loading, do NOT redirect the user anywhere else
-      if (isLoggedIn && isProfileLoading) {
+      // 2. If not logged in and session is null, allow auth screens or send to /welcome
+      if (!isLoggedIn) {
+        if (matchedLocation == '/profile') {
+          final id = state.uri.queryParameters['id'];
+          if (id != null && id.isNotEmpty) {
+            SharedPreferences.getInstance().then((p) => p.setString('pending_contact_id', id));
+          }
+        }
+        return isGoingToAuth ? null : '/welcome';
+      }
+
+      // 3. User is logged in: Check profile loading status
+      final profileAsync = ref.read(currentUserProvider);
+      final isProfileLoading = profileAsync.isLoading;
+
+      // If user is on an auth screen but already logged in, navigate them forward
+      if (isGoingToAuth) {
+        if (isProfileLoading) return '/'; // Return to splash rather than stranding on auth screen
+        final onboardingCompleted = ref.read(onboardingStatusProvider);
+        return onboardingCompleted ? '/home' : '/onboarding';
+      }
+
+      // While profile is loading for non-auth screens, do not redirect
+      if (isProfileLoading) {
         return null;
       }
 
-      // Now profile has loaded — read onboarding status
+      // Profile loaded: Read onboarding status
       final onboardingCompleted = ref.read(onboardingStatusProvider);
 
       // If logged in but not onboarded, redirect to onboarding
-      if (isLoggedIn && !onboardingCompleted) {
+      if (!onboardingCompleted) {
         return matchedLocation == '/onboarding' ? null : '/onboarding';
       }
 
-      // If logged in and onboarded, redirect home from auth/onboarding screens
-      if (isLoggedIn && onboardingCompleted) {
-        if (isGoingToAuth || matchedLocation == '/onboarding') {
-          return '/home';
-        }
+      // If logged in and onboarded, redirect home from onboarding
+      if (onboardingCompleted && matchedLocation == '/onboarding') {
+        return '/home';
       }
 
       return null;
@@ -395,7 +419,7 @@ class MainNavigationHolder extends ConsumerStatefulWidget {
   ConsumerState<MainNavigationHolder> createState() => _MainNavigationHolderState();
 }
 
-class _MainNavigationHolderState extends ConsumerState<MainNavigationHolder> {
+class _MainNavigationHolderState extends ConsumerState<MainNavigationHolder> with WidgetsBindingObserver {
   int _globalIndex = 0;
   int _eventIndex = 0;
   AppViewMode _currentMode = AppViewMode.global;
@@ -409,12 +433,26 @@ class _MainNavigationHolderState extends ConsumerState<MainNavigationHolder> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadInitialData();
     _subscribeToEventsChanges();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        DeepLinkService().processPendingContact(context);
+      }
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      DeepLinkService().checkDeferredLinkOnResume(context);
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _eventsChannel?.unsubscribe();
     super.dispose();
   }
