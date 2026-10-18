@@ -8,7 +8,7 @@ import '../widgets/glass_container.dart';
 import '../services/supabase_service.dart';
 import '../theme/profile_material_finish.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:flutter/services.dart';
+import '../widgets/share_card_sheet.dart';
 class MyQRCodeScreen extends StatefulWidget {
   const MyQRCodeScreen({super.key});
 
@@ -202,12 +202,10 @@ class _MyQRCodeScreenState extends State<MyQRCodeScreen> {
                       const SizedBox(height: 40),
                       OutlinedButton.icon(
                         onPressed: () {
-                          Clipboard.setData(ClipboardData(text: userData));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text("Profile link copied to clipboard!".tr(), style: const TextStyle(fontWeight: FontWeight.bold)),
-                              backgroundColor: _finish.primaryColor,
-                            ),
+                          ShareCardSheet.show(
+                            context,
+                            qrData: userData,
+                            fullName: _fullName,
                           );
                         },
                         icon: Icon(LucideIcons.share2, size: 18, color: _finish.primaryColor),

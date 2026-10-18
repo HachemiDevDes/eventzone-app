@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -1036,7 +1037,44 @@ class _ProfessionalProfileScreenState extends ConsumerState<ProfessionalProfileS
   }
 
   Widget _buildConnectionCTA(String status) {
-    if (widget.source == 'Business Card' || widget.source == 'Event Badge' || widget.source == 'Manual Entry') {
+    if (widget.targetUserId == null) {
+      if (_phone.isNotEmpty || _email.isNotEmpty) {
+        return Row(
+          children: [
+            if (_phone.isNotEmpty)
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => launchSocialLink(context, 'phone', _phone.split('\n').first.trim()),
+                  icon: const Icon(LucideIcons.phoneCall, size: 16),
+                  label: Text("Call".tr(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: EventzoneTheme.primaryAction,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+            if (_phone.isNotEmpty && _email.isNotEmpty)
+              const SizedBox(width: 12),
+            if (_email.isNotEmpty)
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => launchSocialLink(context, 'email', _email.split('\n').first.trim()),
+                  icon: const Icon(LucideIcons.mail, size: 16),
+                  label: Text("Message".tr(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13)),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: Colors.white.withOpacity(0.15)),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                  ),
+                ),
+              ),
+          ],
+        );
+      }
       return const SizedBox.shrink();
     }
     
@@ -1266,10 +1304,17 @@ class _ProfessionalProfileScreenState extends ConsumerState<ProfessionalProfileS
     if (widget.targetUserId != null) {
       final statusAsync = ref.watch(connectionStatusProvider(widget.targetUserId!));
       connectionStatus = statusAsync.value ?? (widget.connectionId != null ? 'accepted' : 'none');
-    } else if (widget.connectionId != null) {
+    } else if (widget.connectionId != null || widget.source == 'Business Card' || widget.source == 'Event Badge' || widget.source == 'Manual Entry') {
       connectionStatus = 'accepted';
     }
     final bool isConnected = connectionStatus == 'accepted';
+
+    final avatarProvider = getAvatarProvider(_avatarUrl.isNotEmpty ? _avatarUrl : widget.avatarUrl);
+    final bool isCardImage = (widget.source == 'Business Card' ||
+            widget.source == 'Event Badge' ||
+            widget.source?.toLowerCase().contains('card') == true ||
+            widget.source?.toLowerCase().contains('badge') == true) &&
+        avatarProvider != null;
 
     return Scaffold(
       backgroundColor: const Color(0xFF060913),
@@ -1287,8 +1332,21 @@ class _ProfessionalProfileScreenState extends ConsumerState<ProfessionalProfileS
                       Container(
                         height: 320,
                         width: double.infinity,
-                        color: _finish.cardSurfaceColor,
-                        child: getAvatarProvider(widget.avatarUrl) == null
+                        decoration: isCardImage
+                            ? const BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    Color(0xFF0A2265), // Deep Dark Blue
+                                    Color(0xFF155DFB), // Vibrant Blue (#155DFB from Figma Frame 163313)
+                                  ],
+                                ),
+                              )
+                            : BoxDecoration(
+                                color: _finish.cardSurfaceColor,
+                              ),
+                        child: avatarProvider == null
                             ? const Center(
                                 child: Icon(
                                   LucideIcons.user,
@@ -1296,22 +1354,92 @@ class _ProfessionalProfileScreenState extends ConsumerState<ProfessionalProfileS
                                   color: Colors.white24,
                                 ),
                               )
-                            : Image(
-                                image: getAvatarProvider(widget.avatarUrl)!,
-                                fit: BoxFit.cover,
-                              ),
+                            : isCardImage
+                                ? SafeArea(
+                                    bottom: false,
+                                    child: Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(top: 48, bottom: 24, left: 24, right: 24),
+                                        child: GestureDetector(
+                                          onTap: () => _showFullCardPreview(context, avatarProvider),
+                                          child: Container(
+                                            constraints: const BoxConstraints(maxHeight: 185, maxWidth: 330),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius: BorderRadius.circular(18),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.black.withValues(alpha: 0.35),
+                                                  blurRadius: 22,
+                                                  offset: const Offset(0, 8),
+                                                  spreadRadius: 2,
+                                                ),
+                                              ],
+                                            ),
+                                            child: Stack(
+                                              children: [
+                                                ClipRRect(
+                                                  borderRadius: BorderRadius.circular(18),
+                                                  child: Image(
+                                                    image: avatarProvider,
+                                                    fit: BoxFit.contain,
+                                                  ),
+                                                ),
+                                                Positioned(
+                                                  right: 8,
+                                                  bottom: 8,
+                                                  child: Container(
+                                                    padding: const EdgeInsets.all(5),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.black.withValues(alpha: 0.65),
+                                                      borderRadius: BorderRadius.circular(10),
+                                                      border: Border.all(color: Colors.white12),
+                                                    ),
+                                                    child: const Icon(
+                                                      LucideIcons.maximize2,
+                                                      size: 13,
+                                                      color: Colors.white70,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                : Image(
+                                    image: avatarProvider,
+                                    fit: BoxFit.cover,
+                                  ),
                       ),
-                      Container(
-                        height: 320,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.black54,
-                              _finish.glowColor.withOpacity(0.12),
-                              const Color(0xFF060913),
-                            ],
+                      IgnorePointer(
+                        child: Container(
+                          height: 320,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: isCardImage
+                                  ? [
+                                      Colors.black38,
+                                      Colors.transparent,
+                                      Colors.transparent,
+                                      const Color(0xFF060913).withValues(alpha: 0.30),
+                                      const Color(0xFF060913).withValues(alpha: 0.70),
+                                      const Color(0xFF060913),
+                                    ]
+                                  : [
+                                      Colors.black54,
+                                      Colors.transparent,
+                                      _finish.glowColor.withValues(alpha: 0.08),
+                                      const Color(0xFF060913).withValues(alpha: 0.40),
+                                      const Color(0xFF060913).withValues(alpha: 0.80),
+                                      const Color(0xFF060913),
+                                    ],
+                              stops: const [0.0, 0.20, 0.45, 0.68, 0.86, 1.0],
+                            ),
                           ),
                         ),
                       ),
@@ -1487,9 +1615,12 @@ class _ProfessionalProfileScreenState extends ConsumerState<ProfessionalProfileS
                           ),
                         ],
                         
-                        if (widget.source != 'Business Card' && widget.source != 'Event Badge' && widget.source != 'Manual Entry') ...[
-                          const SizedBox(height: 24),
-                          _buildConnectionCTA(connectionStatus),
+                        const SizedBox(height: 20),
+                        _buildConnectionCTA(connectionStatus),
+                        
+                        if (isConnected || widget.targetUserId == null || widget.source?.isNotEmpty == true || _phone.isNotEmpty || _email.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          _buildContactDetailsSection(),
                         ],
                           
                         if (_bio.isNotEmpty || _lookingFor.isNotEmpty || _industries.isNotEmpty || _interests.isNotEmpty) ...[
@@ -1518,10 +1649,26 @@ class _ProfessionalProfileScreenState extends ConsumerState<ProfessionalProfileS
                           _buildLockedOverlay(),
                         ],
 
-                        if (_socialLinks.where((link) => (link['value'] ?? '').toString().trim().isNotEmpty).isNotEmpty) ...[
+                        if (_socialLinks.where((link) {
+                          final platform = (link['platform'] ?? '').toString().toLowerCase().trim();
+                          final val = (link['value'] ?? '').toString().trim();
+                          if (val.isEmpty) return false;
+                          if (platform == 'email' || platform == 'mail' || platform == 'phone' || platform == 'mobile' || platform == 'tel') {
+                            return false;
+                          }
+                          return true;
+                        }).isNotEmpty) ...[
                           const SizedBox(height: 16),
                           ..._socialLinks
-                              .where((link) => (link['value'] ?? '').toString().trim().isNotEmpty)
+                              .where((link) {
+                                final platform = (link['platform'] ?? '').toString().toLowerCase().trim();
+                                final val = (link['value'] ?? '').toString().trim();
+                                if (val.isEmpty) return false;
+                                if (platform == 'email' || platform == 'mail' || platform == 'phone' || platform == 'mobile' || platform == 'tel') {
+                                  return false;
+                                }
+                                return true;
+                              })
                               .map((link) {
                                 final platform = (link['platform'] ?? '').toString();
                                 final val = (link['value'] ?? '').toString().trim();
@@ -2073,6 +2220,243 @@ class _ProfessionalProfileScreenState extends ConsumerState<ProfessionalProfileS
             },
           ),
       ],
+    );
+  }
+
+  Widget _buildContactDetailsSection() {
+    final hasPhone = _phone.trim().isNotEmpty;
+    final hasEmail = _email.trim().isNotEmpty;
+    final hasWebsite = _website.trim().isNotEmpty;
+    final hasAddress = _address.trim().isNotEmpty;
+
+    if (!hasPhone && !hasEmail && !hasWebsite && !hasAddress) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (hasPhone)
+          _buildContactDetailCard(
+            icon: LucideIcons.phone,
+            iconColor: const Color(0xFF10B981),
+            label: "Phone Number".tr(),
+            value: _phone,
+            onTap: () => launchSocialLink(context, 'phone', _phone.split('\n').first.trim()),
+            actionIcon: LucideIcons.copy,
+            actionTooltip: "Copy phone number".tr(),
+            onActionTap: () async {
+              await Clipboard.setData(ClipboardData(text: _phone));
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text("Phone number copied to clipboard".tr()),
+                    duration: const Duration(seconds: 2),
+                    backgroundColor: EventzoneTheme.accentSuccess,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+          ),
+        if (hasEmail)
+          _buildContactDetailCard(
+            icon: LucideIcons.mail,
+            iconColor: const Color(0xFF3B82F6),
+            label: "Email Address".tr(),
+            value: _email,
+            onTap: () => launchSocialLink(context, 'email', _email.split('\n').first.trim()),
+            actionIcon: LucideIcons.copy,
+            actionTooltip: "Copy email address".tr(),
+            onActionTap: () async {
+              await Clipboard.setData(ClipboardData(text: _email));
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text("Email address copied to clipboard".tr()),
+                    duration: const Duration(seconds: 2),
+                    backgroundColor: EventzoneTheme.accentSuccess,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+          ),
+        if (hasWebsite)
+          _buildContactDetailCard(
+            icon: LucideIcons.globe,
+            iconColor: const Color(0xFF8B5CF6),
+            label: "Website".tr(),
+            value: _website,
+            onTap: () => launchSocialLink(context, 'website', _website),
+            actionIcon: LucideIcons.externalLink,
+            actionTooltip: "Open website".tr(),
+            onActionTap: () => launchSocialLink(context, 'website', _website),
+          ),
+        if (hasAddress)
+          _buildContactDetailCard(
+            icon: LucideIcons.mapPin,
+            iconColor: const Color(0xFFF59E0B),
+            label: "Location".tr(),
+            value: _address,
+            onTap: () async {
+              await Clipboard.setData(ClipboardData(text: _address));
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text("Location copied to clipboard".tr()),
+                    duration: const Duration(seconds: 2),
+                    backgroundColor: EventzoneTheme.accentSuccess,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+            actionIcon: LucideIcons.copy,
+            actionTooltip: "Copy location".tr(),
+            onActionTap: () async {
+              await Clipboard.setData(ClipboardData(text: _address));
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text("Location copied to clipboard".tr()),
+                    duration: const Duration(seconds: 2),
+                    backgroundColor: EventzoneTheme.accentSuccess,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+          ),
+      ],
+    );
+  }
+
+  void _showFullCardPreview(BuildContext context, ImageProvider imageProvider) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(LucideIcons.x, color: Colors.white, size: 20),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: InteractiveViewer(
+                  maxScale: 4.0,
+                  child: Image(
+                    image: imageProvider,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContactDetailCard({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required String value,
+    required VoidCallback onTap,
+    IconData? actionIcon,
+    String? actionTooltip,
+    VoidCallback? onActionTap,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: iconColor.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: iconColor, size: 18),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          color: Colors.white38,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        value,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          height: 1.25,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                if (actionIcon != null && onActionTap != null)
+                  IconButton(
+                    icon: Icon(actionIcon, size: 16, color: Colors.white54),
+                    tooltip: actionTooltip,
+                    onPressed: onActionTap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 

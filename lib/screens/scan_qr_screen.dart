@@ -16,6 +16,7 @@ import 'package:google_mlkit_language_id/google_mlkit_language_id.dart';
 import 'package:image_picker/image_picker.dart';
 import 'review_contact_screen.dart';
 import 'package:camerawesome/camerawesome_plugin.dart';
+import 'package:camerawesome/pigeon.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'dart:math' as math;
@@ -23,6 +24,8 @@ import 'package:image/image.dart' as img;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'professional_profile_screen.dart';
 import '../services/business_card_scanner_service.dart';
+import 'package:permission_handler/permission_handler.dart';
+
 
 // Top-level function for Isolate to prevent UI freezing during heavy image manipulation
 Future<Map<String, dynamic>> _processImageInIsolate(Map<String, dynamic> args) async {
@@ -100,6 +103,77 @@ Future<Map<String, dynamic>> _processImageInIsolate(Map<String, dynamic> args) a
   };
 }
 
+/// Isolate function to cleanly crop the business card to the viewfinder frame
+Future<String> _cropCardImageInIsolate(Map<String, dynamic> args) async {
+  final String path = args['path'];
+  final double screenWidth = args['screenWidth'];
+  final double screenHeight = args['screenHeight'];
+  final double frameW = args['frameW'];
+  final double frameH = args['frameH'];
+
+  final Uint8List imageBytes = await File(path).readAsBytes();
+  img.Image? fullImage = img.decodeImage(imageBytes);
+  if (fullImage == null) return path;
+
+  // Orient image properly to match device screen preview
+  fullImage = img.bakeOrientation(fullImage);
+
+  // If device is in portrait (screenWidth < screenHeight) but image decoded in landscape, rotate 90° CW
+  if (screenWidth < screenHeight && fullImage.width > fullImage.height) {
+    fullImage = img.copyRotate(fullImage, angle: 90);
+  }
+
+  final double imgW = fullImage.width.toDouble();
+  final double imgH = fullImage.height.toDouble();
+
+  // Screen-to-image scale with BoxFit.cover
+  final double scale = math.max(
+    screenWidth / imgW,
+    screenHeight / imgH,
+  );
+  final double dx = (screenWidth - imgW * scale) / 2;
+  final double dy = (screenHeight - imgH * scale) / 2;
+
+  // Viewfinder position on screen (matching build method)
+  final double frameLeft = (screenWidth - frameW) / 2;
+  final double frameTop = (screenHeight - frameH) / 2 - 50;
+
+  // Convert screen viewfinder box into image coordinates
+  final double rawLeft = (frameLeft - dx) / scale;
+  final double rawTop = (frameTop - dy) / scale;
+  final double rawW = frameW / scale;
+  final double rawH = frameH / scale;
+
+  // Generous 25% safety padding on each side to ensure 100% of card borders, edge text,
+  // emails, phone numbers, and URLs are never clipped even if held slightly off-center
+  final double padX = rawW * 0.25;
+  final double padY = rawH * 0.25;
+
+  final int cropX = (rawLeft - padX).clamp(0, imgW - 1).toInt();
+  final int cropY = (rawTop - padY).clamp(0, imgH - 1).toInt();
+  final int cropW = (rawW + padX * 2).clamp(1, imgW - cropX).toInt();
+  final int cropH = (rawH + padY * 2).clamp(1, imgH - cropY).toInt();
+
+  final img.Image cropped = img.copyCrop(
+    fullImage,
+    x: cropX,
+    y: cropY,
+    width: cropW,
+    height: cropH,
+  );
+
+  final tempDir = Directory.systemTemp;
+  final String croppedPath = '${tempDir.path}/card_cropped_${DateTime.now().millisecondsSinceEpoch}.jpg';
+  await File(croppedPath).writeAsBytes(img.encodeJpg(cropped, quality: 95));
+
+  // Remove the uncropped raw camera photo
+  try {
+    await File(path).delete();
+  } catch (_) {}
+
+  return croppedPath;
+}
+
 class ScanQRScreen extends StatefulWidget {
   final Map<String, dynamic>? previousScanData;
 
@@ -112,7 +186,7 @@ class ScanQRScreen extends StatefulWidget {
   State<ScanQRScreen> createState() => _ScanQRScreenState();
 }
 
-class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderStateMixin {
+class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   bool _isConnecting = false;
   late String _scanType; // "QR Code", "Business Card", "Event Badge"
   final BarcodeScanner _barcodeScanner = BarcodeScanner(formats: [BarcodeFormat.qrCode]);
@@ -128,23 +202,177 @@ class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderSt
   CameraState? _cameraAwesomeState;
   Timer? _aiStatusTimer;
 
+  // ── Camera Reliability & Lifecycle Management ──
+  Key _cameraKey = UniqueKey();
+  bool? _hasCameraPermission; // null = checking, true = granted, false = denied
+  bool _isPermanentlyDenied = false;
+  bool _isReadyToBuildCamera = false;
+  bool _isCameraReady = false;
+  bool _cameraInitFailed = false;
+  int _retryCount = 0;
+  Timer? _cameraWatchdogTimer;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scanType = widget.previousScanData != null ? "Business Card" : "QR Code";
     _laserController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
     );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initScreen();
+    });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    if (_isFlashOn && _cameraAwesomeState != null) {
+      try {
+        _cameraAwesomeState!.sensorConfig.setFlashMode(FlashMode.none);
+        _isFlashOn = false;
+      } catch (_) {}
+    }
+    _cameraWatchdogTimer?.cancel();
     _aiStatusTimer?.cancel();
     _barcodeScanner.close();
     _laserController.dispose();
 
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      if (_isFlashOn && _cameraAwesomeState != null) {
+        try {
+          _cameraAwesomeState!.sensorConfig.setFlashMode(FlashMode.none);
+          _isFlashOn = false;
+        } catch (_) {}
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      // Re-verify permission and reboot camera if native Android released the hardware in background
+      if (mounted && _hasCameraPermission == true && !_isConnecting) {
+        Future.delayed(const Duration(milliseconds: 200), () {
+          if (mounted && !_isConnecting) {
+            _recoverCamera();
+          }
+        });
+      }
+    }
+  }
+
+  Future<void> _initScreen() async {
+    // 1. Check and request camera permission proactively before mounting CameraAwesome
+    await _checkAndRequestCameraPermission(requestIfNeeded: true);
+
+    // 2. Allow a short 150ms settling window for Android route transition and any previous camera unbind
+    await Future.delayed(const Duration(milliseconds: 150));
+
+    if (mounted) {
+      setState(() {
+        _isReadyToBuildCamera = true;
+      });
+      if (_hasCameraPermission == true) {
+        _startCameraWatchdog();
+      }
+    }
+  }
+
+  Future<void> _checkAndRequestCameraPermission({bool requestIfNeeded = true}) async {
+    try {
+      var status = await Permission.camera.status;
+      if (!status.isGranted && requestIfNeeded) {
+        status = await Permission.camera.request();
+      }
+      if (mounted) {
+        setState(() {
+          _hasCameraPermission = status.isGranted;
+          _isPermanentlyDenied = status.isPermanentlyDenied;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error checking camera permission: $e");
+      if (mounted) {
+        setState(() {
+          _hasCameraPermission = true;
+        });
+      }
+    }
+  }
+
+  void _startCameraWatchdog() {
+    _cameraWatchdogTimer?.cancel();
+    _cameraWatchdogTimer = Timer(const Duration(milliseconds: 3500), () {
+      if (!mounted) return;
+      if (!_isCameraReady) {
+        debugPrint("Camera watchdog: camera did not initialize within 3.5s. Attempting recovery...");
+        if (_retryCount < 2) {
+          _retryCount++;
+          _recoverCamera();
+        } else {
+          setState(() {
+            _cameraInitFailed = true;
+          });
+        }
+      }
+    });
+  }
+
+  void _recoverCamera() {
+    _cameraWatchdogTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _isCameraReady = false;
+      _cameraInitFailed = false;
+      _cameraAwesomeState = null;
+      _cameraKey = ValueKey(DateTime.now().millisecondsSinceEpoch);
+    });
+    _startCameraWatchdog();
+  }
+
+  Future<void> _restartCameraManual() async {
+    _cameraWatchdogTimer?.cancel();
+    setState(() {
+      _retryCount = 0;
+      _cameraInitFailed = false;
+      _isCameraReady = false;
+      _cameraAwesomeState = null;
+    });
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (mounted) {
+      await _checkAndRequestCameraPermission(requestIfNeeded: true);
+      if (_hasCameraPermission == true) {
+        setState(() {
+          _cameraKey = ValueKey(DateTime.now().millisecondsSinceEpoch);
+        });
+        _startCameraWatchdog();
+      }
+    }
+  }
+
+  void _onCameraStateReceived(CameraState cameraState) {
+    _cameraAwesomeState = cameraState;
+    if (cameraState is! PreparingCameraState) {
+      if (!_isCameraReady) {
+        _cameraWatchdogTimer?.cancel();
+        try {
+          CamerawesomePlugin.startAutoFocus();
+        } catch (_) {}
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _isCameraReady = true;
+              _cameraInitFailed = false;
+              _retryCount = 0;
+            });
+          }
+        });
+      }
+    }
   }
 
 
@@ -438,32 +666,28 @@ class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderSt
                 backgroundColor: EventzoneTheme.accentSuccess,
               ),
             );
-            if (uuid != null || _scanType != "QR Code") {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ProfessionalProfileScreen(
-                    name: name,
-                    title: title,
-                    avatarUrl: avatarUrl,
-                    source: _scanType,
-                    isNew: "true",
-                    email: email,
-                    phone: phone,
-                    website: website,
-                    company: company,
-                    department: department,
-                    address: scannedProfile?["address"],
-                    targetUserId: uuid,
-                    connectionId: connectionId,
-                    socialLinks: scannedProfile?['metadata']?['socials'],
-                    createdAt: DateTime.now().toIso8601String(),
-                  ),
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ProfessionalProfileScreen(
+                  name: name,
+                  title: title,
+                  avatarUrl: avatarUrl,
+                  source: _scanType,
+                  isNew: "true",
+                  email: email,
+                  phone: phone,
+                  website: website,
+                  company: company,
+                  department: department,
+                  address: scannedProfile?["address"],
+                  targetUserId: uuid,
+                  connectionId: connectionId,
+                  socialLinks: scannedProfile?['metadata']?['socials'],
+                  createdAt: DateTime.now().toIso8601String(),
                 ),
-              );
-            } else {
-              Navigator.pop(context);
-            }
+              ),
+            );
           }
         } catch (e) {
           if (mounted) {
@@ -566,9 +790,13 @@ class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderSt
     if (_isConnecting) return;
     if (_scanType == "QR Code") return;
     
-    if (_cameraAwesomeState == null) {
+    if (_cameraAwesomeState == null || !_isCameraReady) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Camera not initialized yet.")),
+        SnackBar(
+          content: Text("Camera is still starting. Please wait a moment...".tr()),
+          backgroundColor: Colors.orangeAccent,
+          duration: const Duration(seconds: 2),
+        ),
       );
       return;
     }
@@ -582,33 +810,62 @@ class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderSt
       
       _cameraAwesomeState!.when(
         onPhotoMode: (pm) async {
-          final request = await pm.takePhoto();
-          if (request.path != null) {
-            // Ensure the captured file is completely written to disk
-            final capturedFile = File(request.path!);
-            int retries = 0;
-            while (retries < 20) {
-              if (await capturedFile.exists() && await capturedFile.length() > 0) {
-                break;
-              }
-              await Future.delayed(const Duration(milliseconds: 50));
-              retries++;
+          try {
+            final request = await pm.takePhoto();
+
+            // Immediately turn off flash/torch after capturing photo
+            if (_isFlashOn && _cameraAwesomeState != null) {
+              try {
+                await _cameraAwesomeState!.sensorConfig.setFlashMode(FlashMode.none);
+                _isFlashOn = false;
+                if (mounted) setState(() {});
+              } catch (_) {}
             }
-            await _processImageFile(request.path!, isCameraCapture: true);
-          } else {
-            setState(() => _isConnecting = false);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text("Capture failed: Path is null"), backgroundColor: Colors.redAccent),
-            );
+
+            if (request.path != null) {
+              // Ensure the captured file is completely written to disk
+              final capturedFile = File(request.path!);
+              int retries = 0;
+              int lastLength = -1;
+              while (retries < 25) {
+                if (await capturedFile.exists()) {
+                  final curLength = await capturedFile.length();
+                  if (curLength > 1000 && curLength == lastLength) {
+                    break;
+                  }
+                  lastLength = curLength;
+                }
+                await Future.delayed(const Duration(milliseconds: 30));
+                retries++;
+              }
+              await _processImageFile(request.path!, isCameraCapture: true);
+            } else {
+              if (mounted) {
+                setState(() => _isConnecting = false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text("Capture failed: Path is null"), backgroundColor: Colors.redAccent),
+                );
+              }
+            }
+          } catch (e) {
+            debugPrint("Photo capture callback error: $e");
+            if (mounted) {
+              setState(() => _isConnecting = false);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text("Capture failed: $e"), backgroundColor: Colors.redAccent),
+              );
+            }
           }
         },
       );
     } catch (e) {
       debugPrint("Capture error: $e");
-      setState(() => _isConnecting = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Capture failed: $e"), backgroundColor: Colors.redAccent),
-      );
+      if (mounted) {
+        setState(() => _isConnecting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Capture failed: $e"), backgroundColor: Colors.redAccent),
+        );
+      }
     }
   }
 
@@ -634,9 +891,28 @@ class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderSt
         _ocrProgress = 0.20;
       });
 
+      String activePath = path;
+      if (isCameraCapture) {
+        try {
+          final size = MediaQuery.of(context).size;
+          final double frameW = _scanType == "Business Card" ? 340 : 280;
+          final double frameH = _scanType == "Business Card" ? 200 : 420;
+          activePath = await compute(_cropCardImageInIsolate, {
+            'path': path,
+            'screenWidth': size.width,
+            'screenHeight': size.height,
+            'frameW': frameW,
+            'frameH': frameH,
+          });
+        } catch (e) {
+          debugPrint("[ScanQR] Error cropping card in isolate: $e");
+          activePath = path;
+        }
+      }
+
       int aiStep = 0;
       _aiStatusTimer?.cancel();
-      _aiStatusTimer = Timer.periodic(const Duration(milliseconds: 650), (timer) {
+      _aiStatusTimer = Timer.periodic(const Duration(milliseconds: 450), (timer) {
         if (!mounted) {
           timer.cancel();
           return;
@@ -645,25 +921,39 @@ class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderSt
         if (aiStep == 1) {
           setState(() {
             _ocrStatus = "scan_qr_ai_reading".tr();
-            _ocrProgress = 0.50;
+            _ocrProgress = 0.45;
           });
         } else if (aiStep == 2) {
           setState(() {
             _ocrStatus = "scan_qr_ai_extracting".tr();
-            _ocrProgress = 0.75;
+            _ocrProgress = 0.70;
           });
-        } else if (aiStep >= 3) {
+        } else if (aiStep == 3) {
           setState(() {
             _ocrStatus = "scan_qr_ai_almost_done".tr();
-            _ocrProgress = 0.90;
+            _ocrProgress = 0.88;
           });
-          timer.cancel();
+        } else if (aiStep >= 4) {
+          // Dynamic pulsing progress up to 96% while waiting for network/AI completion
+          setState(() {
+            final nextProgress = 0.88 + math.min(0.08, (aiStep - 3) * 0.015);
+            _ocrProgress = nextProgress;
+          });
+          if (aiStep > 35) {
+            timer.cancel();
+          }
         }
       });
 
       try {
-        // Pass original full-color image directly without waiting for slow CPU isolate decoding
-        final aiResult = await BusinessCardScannerService().scanCardImage(File(path));
+        final aiResult = await BusinessCardScannerService()
+            .scanCardImage(File(activePath))
+            .timeout(
+              const Duration(seconds: 30),
+              onTimeout: () => BusinessCardScannerResult.failure(
+                "Scanning timed out. Please check your internet connection.",
+              ),
+            );
         _aiStatusTimer?.cancel();
 
         if (aiResult.isNotBusinessCard) {
@@ -679,7 +969,7 @@ class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderSt
           }
           if (isCameraCapture) {
             try {
-              await File(path).delete();
+              await File(activePath).delete();
             } catch (_) {}
           }
           return;
@@ -699,9 +989,32 @@ class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderSt
             _laserController.stop();
             setState(() => _isConnecting = false);
 
-            if (isCameraCapture) {
+            File? cardImageFile;
+            try {
+              final tempDir = Directory.systemTemp;
+              final targetPath = '${tempDir.path}/card_contact_${DateTime.now().millisecondsSinceEpoch}.jpg';
+              final compressed = await FlutterImageCompress.compressAndGetFile(
+                activePath,
+                targetPath,
+                minWidth: 800,
+                minHeight: 800,
+                quality: 75,
+                autoCorrectionAngle: true,
+                format: CompressFormat.jpeg,
+              );
+              if (compressed != null) {
+                cardImageFile = File(compressed.path);
+              } else {
+                cardImageFile = File(activePath);
+              }
+            } catch (e) {
+              debugPrint('[ScanQR] Error creating low-size card image: $e');
+              cardImageFile = File(activePath);
+            }
+
+            if (isCameraCapture && cardImageFile.path != activePath) {
               try {
-                File(path).deleteSync();
+                File(activePath).deleteSync();
               } catch (_) {}
             }
 
@@ -718,7 +1031,8 @@ class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderSt
                   initialCompany: card.company,
                   initialDepartment: card.department,
                   initialAddress: card.address,
-                  initialNotes: card.notes.isNotEmpty ? card.notes : null,
+                  initialNotes: (card.notes != null && card.notes!.isNotEmpty) ? card.notes : null,
+                  initialImage: cardImageFile,
                   source: _scanType,
                 ),
               ),
@@ -726,11 +1040,43 @@ class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderSt
             return;
           }
         } else {
-          debugPrint("AI card scan fallback (reason: ${aiResult.errorMessage})");
+          _laserController.stop();
+          if (mounted) {
+            setState(() => _isConnecting = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(aiResult.errorMessage ?? "Could not extract card details. Please try with clearer lighting."),
+                backgroundColor: Colors.orangeAccent,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+          if (isCameraCapture) {
+            try {
+              await File(path).delete();
+            } catch (_) {}
+          }
+          return;
         }
       } catch (aiErr) {
         _aiStatusTimer?.cancel();
-        debugPrint("AI scan error, falling back to local OCR: $aiErr");
+        _laserController.stop();
+        if (mounted) {
+          setState(() => _isConnecting = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Scan error: $aiErr"),
+              backgroundColor: Colors.redAccent,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+        if (isCameraCapture) {
+          try {
+            await File(path).delete();
+          } catch (_) {}
+        }
+        return;
       }
     }
 
@@ -1477,7 +1823,7 @@ class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderSt
   }
 
   Future<void> _toggleCameraFlash() async {
-    if (_cameraAwesomeState != null) {
+    if (_cameraAwesomeState != null && _isCameraReady) {
       try {
         _isFlashOn = !_isFlashOn;
         // With CameraAwesome, sensor config manages the flash
@@ -1497,10 +1843,11 @@ class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderSt
       onTap: () async {
         if (_scanType == type) return;
 
-        // Turn off torch/flash when switching modes
+        // Turn off torch/flash when switching modes and re-engage auto-focus
         if (_cameraAwesomeState != null) {
           try {
             _cameraAwesomeState!.sensorConfig.setFlashMode(FlashMode.none);
+            CamerawesomePlugin.startAutoFocus();
           } catch (_) {}
         }
         
@@ -1569,26 +1916,45 @@ class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderSt
       body: Stack(
         children: [
           // 1. Camera View
-          Positioned.fill(
-            child: CameraAwesomeBuilder.custom(
-              saveConfig: SaveConfig.photo(
-                pathBuilder: (sensors) async {
-                  final Directory extDir = await getTemporaryDirectory();
-                  final testDir = await Directory('${extDir.path}/camerawesome').create(recursive: true);
-                  return SingleCaptureRequest('${testDir.path}/${DateTime.now().millisecondsSinceEpoch}.jpg', sensors.first);
-                },
-              ),
-              onImageForAnalysis: _processAnalysisImage,
-              imageAnalysisConfig: AnalysisConfig(
-                androidOptions: const AndroidAnalysisOptions.nv21(
-                  width: 1024,
+          if (_hasCameraPermission == true && _isReadyToBuildCamera)
+            Positioned.fill(
+              child: KeyedSubtree(
+                key: _cameraKey,
+                child: CameraAwesomeBuilder.custom(
+                  previewFit: CameraPreviewFit.cover,
+                  saveConfig: SaveConfig.photo(
+                    pathBuilder: (sensors) async {
+                      final Directory extDir = await getTemporaryDirectory();
+                      final testDir = await Directory('${extDir.path}/camerawesome').create(recursive: true);
+                      return SingleCaptureRequest('${testDir.path}/${DateTime.now().millisecondsSinceEpoch}.jpg', sensors.first);
+                    },
+                  ),
+                  onPreviewTapBuilder: (state) => OnPreviewTap(
+                    onTap: (position, flutterPreviewSize, pixelPreviewSize) {
+                      state.when(
+                        onPhotoMode: (pm) => pm.focusOnPoint(
+                          flutterPosition: position,
+                          pixelPreviewSize: pixelPreviewSize,
+                          flutterPreviewSize: flutterPreviewSize,
+                          androidFocusSettings: AndroidFocusSettings(
+                            autoCancelDurationInMillis: 2500,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  onImageForAnalysis: _processAnalysisImage,
+                  imageAnalysisConfig: AnalysisConfig(
+                    androidOptions: const AndroidAnalysisOptions.nv21(
+                      width: 500,
+                    ),
+                    maxFramesPerSecond: 10,
+                  ),
+                  builder: (cameraState, preview) {
+                    _onCameraStateReceived(cameraState);
+                    return const SizedBox.shrink(); // Transparent background so the stack shows our custom UI
+                  },
                 ),
-                maxFramesPerSecond: 10,
-              ),
-              builder: (cameraState, preview) {
-                _cameraAwesomeState = cameraState;
-                return const SizedBox.shrink(); // Transparent background so the stack shows our custom UI
-              },
             ),
           ),
           
@@ -1713,7 +2079,145 @@ class _ScanQRScreenState extends State<ScanQRScreen> with SingleTickerProviderSt
                       ),
                     ),
                   ] else ...[
-                    // Empty when not connecting so the scanner cutout is clear
+                    // Camera permission required card
+                    if (_hasCameraPermission == false)
+                      Positioned.fromRect(
+                        rect: rect,
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                            child: GlassContainer(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                              borderRadius: 20,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(LucideIcons.cameraOff, color: Colors.amber, size: 36),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    "Camera Access Needed".tr(),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    "Please grant camera access to scan codes and business cards.".tr(),
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 12,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 14),
+                                  ElevatedButton(
+                                    onPressed: () {
+                                      if (_isPermanentlyDenied) {
+                                        openAppSettings();
+                                      } else {
+                                        _checkAndRequestCameraPermission(requestIfNeeded: true);
+                                      }
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: EventzoneTheme.primaryAction,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                    child: Text(
+                                      _isPermanentlyDenied ? "Open Settings".tr() : "Grant Permission".tr(),
+                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                    // Camera initialization failure recovery card
+                    else if (_cameraInitFailed)
+                      Positioned.fromRect(
+                        rect: rect,
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                            child: GlassContainer(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                              borderRadius: 20,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(LucideIcons.refreshCw, color: Colors.orangeAccent, size: 32),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    "Camera Didn't Open".tr(),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    "The device camera was unavailable or delayed.".tr(),
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 12,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 14),
+                                  ElevatedButton.icon(
+                                    onPressed: _restartCameraManual,
+                                    icon: const Icon(LucideIcons.refreshCw, size: 14),
+                                    label: Text("Restart Camera".tr(), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: EventzoneTheme.primaryAction,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                    // Subtle starting indicator while camera hardware initializes
+                    else if (!_isCameraReady)
+                      Positioned.fromRect(
+                        rect: rect,
+                        child: Center(
+                          child: GlassContainer(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            borderRadius: 20,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  "Starting camera...".tr(),
+                                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ],
               );

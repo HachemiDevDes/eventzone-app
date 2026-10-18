@@ -14,6 +14,7 @@ import '../widgets/glass_container.dart';
 import '../widgets/status_pill.dart';
 import '../providers/auth_providers.dart';
 import '../widgets/animated_gradient_avatar.dart';
+import '../widgets/share_card_sheet.dart';
 
 class DiscoveryScreen extends ConsumerStatefulWidget {
   final List<EventModel> events;
@@ -376,13 +377,10 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                                   // Share Card Button
                                   InkWell(
                                     onTap: () {
-                                      Clipboard.setData(ClipboardData(text: userData));
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text("Profile link copied to clipboard!".tr(), style: const TextStyle(fontWeight: FontWeight.bold)),
-                                          backgroundColor: EventzoneTheme.primaryAction,
-                                          behavior: SnackBarBehavior.floating,
-                                        ),
+                                      ShareCardSheet.show(
+                                        context,
+                                        qrData: userData,
+                                        fullName: fullName,
                                       );
                                     },
                                     borderRadius: BorderRadius.circular(20),

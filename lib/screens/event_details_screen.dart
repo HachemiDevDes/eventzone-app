@@ -975,7 +975,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
             crossAxisCount: 2,
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
-            childAspectRatio: 1.18,
+            childAspectRatio: 1.05,
           ),
           itemCount: _sponsors.length,
           itemBuilder: (context, index) {
@@ -985,58 +985,58 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
             return Container(
               decoration: BoxDecoration(
                 color: const Color(0xFF161C2C),
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(18),
                 border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
               ),
               child: Material(
                 color: Colors.transparent,
                 child: InkWell(
-                  onTap: hasWebsite ? () => _launchWebUrl(sponsor.website!) : null,
-                  borderRadius: BorderRadius.circular(16),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // Top Row: external link icon (if available)
-                        Align(
-                          alignment: Alignment.topRight,
-                          child: hasWebsite
-                              ? const Icon(LucideIcons.externalLink, color: Colors.white38, size: 14)
-                              : const SizedBox(height: 14),
+                  onTap: () {
+                    if (hasWebsite) {
+                      _launchWebUrl(sponsor.website!);
+                    } else {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => EventPartnersScreen(eventId: widget.event.id, type: "Sponsors"),
                         ),
-                        // Centered Logo
-                        _buildPartnerLogo(sponsor.logo, sponsor.name, isSponsor: true, size: 46),
-                        // Bottom: Company Name & Subtitle
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              sponsor.name,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                            ),
-                            if (sponsor.description != null && sponsor.description!.isNotEmpty) ...[
-                              const SizedBox(height: 2),
+                      );
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(18),
+                  child: Stack(
+                    children: [
+                      if (hasWebsite)
+                        const Positioned(
+                          top: 10,
+                          right: 10,
+                          child: Icon(LucideIcons.externalLink, color: Colors.white24, size: 13),
+                        ),
+                      Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              _buildPartnerLogo(sponsor.logo, sponsor.name, isSponsor: true, size: 68),
+                              const SizedBox(height: 12),
                               Text(
-                                sponsor.description!,
-                                style: const TextStyle(color: Colors.white54, fontSize: 10.5),
+                                sponsor.name,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 textAlign: TextAlign.center,
                               ),
                             ],
-                          ],
+                          ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1097,94 +1097,68 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
             crossAxisCount: 2,
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
-            childAspectRatio: 1.18,
+            childAspectRatio: 1.05,
           ),
           itemCount: _exhibitors.length,
           itemBuilder: (context, index) {
             final exhibitor = _exhibitors[index];
             final hasWebsite = exhibitor.website != null && exhibitor.website!.isNotEmpty;
-            final hasBooth = exhibitor.booth != null && exhibitor.booth!.isNotEmpty;
-            final subtitle = (exhibitor.industry != null && exhibitor.industry!.isNotEmpty)
-                ? exhibitor.industry!
-                : (exhibitor.description != null ? exhibitor.description! : '');
 
             return Container(
               decoration: BoxDecoration(
                 color: const Color(0xFF161C2C),
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(18),
                 border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
               ),
               child: Material(
                 color: Colors.transparent,
                 child: InkWell(
-                  onTap: hasWebsite ? () => _launchWebUrl(exhibitor.website!) : null,
-                  borderRadius: BorderRadius.circular(16),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // Top Row: Booth badge & external link icon
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            if (hasBooth)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: EventzoneTheme.primaryAction.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: EventzoneTheme.primaryAction.withValues(alpha: 0.3)),
-                                ),
-                                child: Text(
-                                  "${'Booth'.tr()} #${exhibitor.booth}",
-                                  style: TextStyle(
-                                    color: EventzoneTheme.primaryAction,
-                                    fontSize: 8.5,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              )
-                            else
-                              const SizedBox.shrink(),
-                            if (hasWebsite)
-                              const Icon(LucideIcons.externalLink, color: Colors.white38, size: 14)
-                            else
-                              const SizedBox(width: 14, height: 14),
-                          ],
+                  onTap: () {
+                    if (hasWebsite) {
+                      _launchWebUrl(exhibitor.website!);
+                    } else {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => EventPartnersScreen(eventId: widget.event.id, type: "Exhibitors"),
                         ),
-                        // Centered Logo
-                        _buildPartnerLogo(exhibitor.logo, exhibitor.name, isSponsor: false, size: 46),
-                        // Bottom: Company Name & Subtitle
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              exhibitor.name,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                            ),
-                            if (subtitle.isNotEmpty) ...[
-                              const SizedBox(height: 2),
+                      );
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(18),
+                  child: Stack(
+                    children: [
+                      if (hasWebsite)
+                        const Positioned(
+                          top: 10,
+                          right: 10,
+                          child: Icon(LucideIcons.externalLink, color: Colors.white24, size: 13),
+                        ),
+                      Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              _buildPartnerLogo(exhibitor.logo, exhibitor.name, isSponsor: false, size: 68),
+                              const SizedBox(height: 12),
                               Text(
-                                subtitle,
-                                style: const TextStyle(color: Colors.white54, fontSize: 10.5),
+                                exhibitor.name,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 textAlign: TextAlign.center,
                               ),
                             ],
-                          ],
+                          ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1250,7 +1224,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
     );
   }
 
-  Widget _buildPartnerLogo(String? logoUrl, String name, {required bool isSponsor, double size = 52}) {
+  Widget _buildPartnerLogo(String? logoUrl, String name, {required bool isSponsor, double size = 68}) {
     if (logoUrl != null && logoUrl.isNotEmpty) {
       Widget imageWidget;
       if (logoUrl.startsWith('data:image')) {
@@ -1260,8 +1234,8 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
             base64Decode(base64String),
             width: size,
             height: size,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _buildFallbackPartnerLogo(isSponsor, size: size),
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) => _buildFallbackPartnerLogo(isSponsor, size: size),
           );
         } catch (_) {
           imageWidget = _buildFallbackPartnerLogo(isSponsor, size: size);
@@ -1271,8 +1245,8 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
           logoUrl,
           width: size,
           height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _buildFallbackPartnerLogo(isSponsor, size: size),
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) => _buildFallbackPartnerLogo(isSponsor, size: size),
         );
       }
 
@@ -1281,11 +1255,11 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
         height: size,
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(11),
+          borderRadius: BorderRadius.circular(16),
           child: imageWidget,
         ),
       );
@@ -1293,7 +1267,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
     return _buildFallbackPartnerLogo(isSponsor, size: size);
   }
 
-  Widget _buildFallbackPartnerLogo(bool isSponsor, {double size = 52}) {
+  Widget _buildFallbackPartnerLogo(bool isSponsor, {double size = 68}) {
     return Container(
       width: size,
       height: size,
@@ -1301,13 +1275,16 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
         color: isSponsor
             ? const Color(0xFFF59E0B).withValues(alpha: 0.15)
             : EventzoneTheme.primaryAction.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: (isSponsor ? const Color(0xFFF59E0B) : EventzoneTheme.primaryAction).withValues(alpha: 0.25),
+        ),
       ),
       child: Center(
         child: Icon(
           isSponsor ? LucideIcons.building : LucideIcons.store,
           color: isSponsor ? const Color(0xFFF59E0B) : EventzoneTheme.primaryAction,
-          size: size * 0.45,
+          size: size * 0.42,
         ),
       ),
     );

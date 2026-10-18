@@ -33,7 +33,12 @@ extension CrmTypeExtension on CrmType {
 }
 
 final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
-  return const FlutterSecureStorage();
+  return const FlutterSecureStorage(
+    aOptions: AndroidOptions(
+      encryptedSharedPreferences: true,
+      resetOnError: true,
+    ),
+  );
 });
 
 // A provider that keeps track of which CRMs are connected

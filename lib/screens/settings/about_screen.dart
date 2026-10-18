@@ -121,7 +121,7 @@ class _AboutScreenState extends State<AboutScreen> {
                   children: [
                     IconButton(
                       icon: FaIcon(FontAwesomeIcons.globe, color: Colors.white54),
-                      onPressed: () => _launchUrl('https://landing.eventzone.pro/'),
+                      onPressed: () => _launchUrl('https://eventzone.pro/landing'),
                     ),
                     SizedBox(width: 16),
                     IconButton(

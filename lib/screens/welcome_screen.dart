@@ -74,9 +74,14 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> with SingleTicker
     } catch (e) {
       debugPrint("Native Google Sign-In error: $e");
       if (mounted) {
+        final errString = e.toString();
+        String userFriendlyError = "Google sign-in failed. Please try again.".tr();
+        if (errString.contains("10:") || errString.contains("DEVELOPER_ERROR")) {
+          userFriendlyError = "Google Play Services verification error (code 10). Please ensure Google Play App Signing SHA-1 fingerprint is registered in Google Cloud Console.";
+        }
         final errorMessage = kDebugMode
             ? "Google sign-in error: $e"
-            : "Google sign-in failed. Please try again.".tr();
+            : userFriendlyError;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(errorMessage),

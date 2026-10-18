@@ -46,8 +46,51 @@ class _EmailSignInScreenState extends ConsumerState<EmailSignInScreen> {
     });
   }
 
+  static DateTime? _lastOtpSentTime;
+  static String? _lastOtpEmail;
+
   Future<void> _sendOtp() async {
     if (!_formKey.currentState!.validate()) return;
+
+    final email = _emailController.text.trim().toLowerCase();
+
+    // 1. Google Play Console Reviewer / Demo bypass
+    if (email == 'reviewer@eventzone.app' || email == 'playtest@eventzone.app' || email == 'demo@eventzone.app') {
+      setState(() {
+        _codeSent = true;
+      });
+      _startCountdown();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Google Play Reviewer Mode: Code is 123456"),
+            backgroundColor: EventzoneTheme.primaryAction,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+
+    // 2. Cooldown Guard against rapid automated submissions
+    if (_lastOtpEmail == email && _lastOtpSentTime != null) {
+      final elapsed = DateTime.now().difference(_lastOtpSentTime!).inSeconds;
+      if (elapsed < 45) {
+        setState(() {
+          _codeSent = true;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("A verification code was already sent recently. Please check your inbox.".tr()),
+              backgroundColor: Colors.amber,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+    }
 
     setState(() {
       _isLoading = true;
@@ -56,10 +99,13 @@ class _EmailSignInScreenState extends ConsumerState<EmailSignInScreen> {
     try {
       final supabase = ref.read(supabaseProvider);
       await supabase.auth.signInWithOtp(
-        email: _emailController.text.trim(),
+        email: email,
         emailRedirectTo: 'eventzone://login-callback',
         shouldCreateUser: true, // Automatically registers them if it's their first time
       );
+
+      _lastOtpSentTime = DateTime.now();
+      _lastOtpEmail = email;
 
       setState(() {
         _codeSent = true;
@@ -104,6 +150,8 @@ class _EmailSignInScreenState extends ConsumerState<EmailSignInScreen> {
 
   Future<void> _verifyOtp() async {
     final code = _codeController.text.trim();
+    final email = _emailController.text.trim().toLowerCase();
+
     if (code.length < 6 || code.length > 8) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -121,8 +169,21 @@ class _EmailSignInScreenState extends ConsumerState<EmailSignInScreen> {
 
     try {
       final supabase = ref.read(supabaseProvider);
+
+      // Handle Reviewer / Demo bypass authentication without SMTP
+      if ((email == 'reviewer@eventzone.app' || email == 'playtest@eventzone.app' || email == 'demo@eventzone.app') && code == '123456') {
+        final authRes = await supabase.auth.signInWithPassword(
+          email: 'reviewer@eventzone.app',
+          password: 'Eventzone2026!',
+        );
+        if (authRes.user != null && mounted) {
+          context.go('/home');
+          return;
+        }
+      }
+
       final response = await supabase.auth.verifyOTP(
-        email: _emailController.text.trim(),
+        email: email,
         token: code,
         type: OtpType.email,
       );

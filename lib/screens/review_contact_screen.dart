@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -8,17 +10,19 @@ import '../theme/eventzone_theme.dart';
 import '../widgets/glass_container.dart';
 import 'package:easy_localization/easy_localization.dart';
 import '../services/device_contacts_service.dart';
+import 'professional_profile_screen.dart';
 
 class ReviewContactScreen extends StatefulWidget {
   final String initialName;
   final String initialTitle;
   final String initialEmail;
   final String initialPhone;
-  final String initialWebsite;
+  final String? initialWebsite;
   final String initialCompany;
-  final String initialDepartment;
-  final String initialAddress;
+  final String? initialDepartment;
+  final String? initialAddress;
   final String? initialNotes;
+  final File? initialImage;
   final String source;
 
   const ReviewContactScreen({
@@ -27,13 +31,43 @@ class ReviewContactScreen extends StatefulWidget {
     required this.initialTitle,
     required this.initialEmail,
     required this.initialPhone,
-    required this.initialWebsite,
+    this.initialWebsite,
     required this.initialCompany,
-    required this.initialDepartment,
-    required this.initialAddress,
+    this.initialDepartment,
+    this.initialAddress,
     this.initialNotes,
+    this.initialImage,
     required this.source,
   });
+
+  static String? validateEmail(String? v) {
+    if (v == null || v.trim().isEmpty) return null;
+    final val = v.trim();
+    final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+    if (!emailRegex.hasMatch(val)) {
+      return "Please enter a valid email (e.g. name@company.com)";
+    }
+    return null;
+  }
+
+  static String? validatePhone(String? v) {
+    if (v == null || v.trim().isEmpty) return null;
+    final digitsOnly = v.replaceAll(RegExp(r'\D'), '');
+    if (digitsOnly.length < 6) {
+      return "Please enter a valid phone number (min 6 digits)";
+    }
+    return null;
+  }
+
+  static String? validateWebsite(String? v) {
+    if (v == null || v.trim().isEmpty) return null;
+    final val = v.trim();
+    final urlRegex = RegExp(r'^(https?:\/\/)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(\/\S*)?$', caseSensitive: false);
+    if (!urlRegex.hasMatch(val)) {
+      return "Please enter a valid website (e.g. company.com)";
+    }
+    return null;
+  }
 
   @override
   State<ReviewContactScreen> createState() => _ReviewContactScreenState();
@@ -59,14 +93,15 @@ class _ReviewContactScreenState extends State<ReviewContactScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedImage = widget.initialImage;
     _nameController = TextEditingController(text: widget.initialName);
     _titleController = TextEditingController(text: widget.initialTitle);
     _companyController = TextEditingController(text: widget.initialCompany);
-    _departmentController = TextEditingController(text: widget.initialDepartment);
+    _departmentController = TextEditingController(text: widget.initialDepartment ?? "");
     _emailController = TextEditingController(text: widget.initialEmail);
     _phoneController = TextEditingController(text: widget.initialPhone);
-    _websiteController = TextEditingController(text: widget.initialWebsite);
-    _addressController = TextEditingController(text: widget.initialAddress);
+    _websiteController = TextEditingController(text: widget.initialWebsite ?? "");
+    _addressController = TextEditingController(text: widget.initialAddress ?? "");
     _notesController = TextEditingController(text: widget.initialNotes ?? "");
   }
 
@@ -183,14 +218,29 @@ class _ReviewContactScreenState extends State<ReviewContactScreen> {
 
       if (_selectedImage != null) {
         try {
-          final fileName = "${DateTime.now().millisecondsSinceEpoch}_avatar.jpg";
+          // Compress to lightweight low-size contact picture (~35-45 KB) to save storage and bandwidth
+          final Uint8List? compressedBytes = await FlutterImageCompress.compressWithFile(
+            _selectedImage!.path,
+            minWidth: 800,
+            minHeight: 800,
+            quality: 75,
+            autoCorrectionAngle: true,
+            format: CompressFormat.jpeg,
+          );
+          final uploadBytes = compressedBytes ?? await _selectedImage!.readAsBytes();
+          final fileName = "${DateTime.now().millisecondsSinceEpoch}_contact.jpg";
           await Supabase.instance.client.storage
               .from('avatars')
-              .upload(fileName, _selectedImage!);
+              .uploadBinary(
+                fileName, 
+                uploadBytes,
+                fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
+              );
           avatarUrl = Supabase.instance.client.storage
               .from('avatars')
               .getPublicUrl(fileName);
         } catch (e) {
+          debugPrint("[ReviewContactScreen] Avatar storage upload error: $e");
           avatarUrl = _selectedImage!.path;
         }
       }
@@ -221,7 +271,13 @@ class _ReviewContactScreenState extends State<ReviewContactScreen> {
         'is_new': true,
       };
 
-      await Supabase.instance.client.from('connections').insert(newConnection);
+      final insertedConn = await Supabase.instance.client
+          .from('connections')
+          .insert(newConnection)
+          .select()
+          .maybeSingle();
+
+      final connectionId = insertedConn?['id'] as String?;
 
       // Also save to device contacts if option enabled
       if (_saveToPhoneAlso) {
@@ -248,7 +304,27 @@ class _ReviewContactScreenState extends State<ReviewContactScreen> {
             backgroundColor: EventzoneTheme.accentSuccess,
           ),
         );
-        Navigator.pop(context);
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ProfessionalProfileScreen(
+              name: _nameController.text.trim(),
+              title: _titleController.text.trim(),
+              avatarUrl: avatarUrl,
+              source: widget.source,
+              isNew: "true",
+              email: _emailController.text.trim(),
+              phone: _phoneController.text.trim(),
+              website: _websiteController.text.trim(),
+              company: _companyController.text.trim(),
+              department: _departmentController.text.trim(),
+              address: _addressController.text.trim(),
+              notes: initialNotes,
+              connectionId: connectionId,
+              createdAt: insertedConn?['created_at']?.toString() ?? DateTime.now().toIso8601String(),
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -356,26 +432,84 @@ class _ReviewContactScreenState extends State<ReviewContactScreen> {
                       child: Stack(
                         alignment: Alignment.bottomRight,
                         children: [
-                           CircleAvatar(
-                            radius: 54,
-                            backgroundColor: Colors.white10,
-                            backgroundImage: _selectedImage != null
-                                ? FileImage(_selectedImage!)
-                                : null,
-                            child: _selectedImage == null
-                                ? Icon(LucideIcons.user, size: 48, color: Colors.white54)
-                                : null,
-                          ),
+                          if (_selectedImage != null && (widget.source == "Business Card" || widget.source == "Event Badge"))
+                            Container(
+                              width: double.infinity,
+                              height: 190,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(20),
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    Color(0xFF0A2265), // Deep Dark Blue
+                                    Color(0xFF155DFB), // Vibrant Blue (#155DFB from Figma Frame 163313)
+                                  ],
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(0xFF155DFB).withValues(alpha: 0.35),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+                                  child: Container(
+                                    constraints: const BoxConstraints(maxHeight: 145, maxWidth: 260),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(16),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(alpha: 0.35),
+                                          blurRadius: 16,
+                                          offset: const Offset(0, 6),
+                                        ),
+                                      ],
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(16),
+                                      child: Image.file(
+                                        _selectedImage!,
+                                        fit: BoxFit.contain,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            )
+                          else
+                            CircleAvatar(
+                              radius: 54,
+                              backgroundColor: Colors.white10,
+                              backgroundImage: _selectedImage != null
+                                  ? FileImage(_selectedImage!)
+                                  : null,
+                              child: _selectedImage == null
+                                  ? const Icon(LucideIcons.user, size: 48, color: Colors.white54)
+                                  : null,
+                            ),
                           Container(
-                            padding: EdgeInsets.all(8),
+                            padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
                               color: EventzoneTheme.primaryAction,
                               shape: BoxShape.circle,
+                              border: Border.all(color: const Color(0xFF060913), width: 2),
                             ),
-                            child: Icon(LucideIcons.camera, size: 16, color: Colors.white),
+                            child: const Icon(LucideIcons.camera, size: 14, color: Colors.white),
                           ),
                         ],
                       ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      _selectedImage != null && (widget.source == "Business Card" || widget.source == "Event Badge")
+                          ? "Business Card Picture".tr()
+                          : "Contact Photo".tr(),
+                      style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w600),
                     ),
                     SizedBox(height: 24),
 
@@ -391,9 +525,9 @@ class _ReviewContactScreenState extends State<ReviewContactScreen> {
                     }),
                     _buildTextField("Company".tr(), _companyController, LucideIcons.building2, fieldKey: 'company'),
                     _buildTextField("Department", _departmentController, LucideIcons.layers, fieldKey: 'department'),
-                    _buildTextField("Email Address", _emailController, LucideIcons.mail, fieldKey: 'email', keyboardType: TextInputType.emailAddress),
-                    _buildTextField("Phone Number".tr(), _phoneController, LucideIcons.phone, fieldKey: 'phone', keyboardType: TextInputType.phone),
-                    _buildTextField("Website", _websiteController, LucideIcons.globe, fieldKey: 'website', keyboardType: TextInputType.url),
+                    _buildTextField("Email Address", _emailController, LucideIcons.mail, fieldKey: 'email', keyboardType: TextInputType.emailAddress, validator: _validateEmail),
+                    _buildTextField("Phone Number".tr(), _phoneController, LucideIcons.phone, fieldKey: 'phone', keyboardType: TextInputType.phone, validator: _validatePhone),
+                    _buildTextField("Website", _websiteController, LucideIcons.globe, fieldKey: 'website', keyboardType: TextInputType.url, validator: _validateWebsite),
                     _buildTextField("Address".tr(), _addressController, LucideIcons.mapPin, fieldKey: 'address'),
                     
                     SizedBox(height: 16),
@@ -512,6 +646,47 @@ class _ReviewContactScreenState extends State<ReviewContactScreen> {
     );
   }
 
+  String? _validateEmail(String? v) => ReviewContactScreen.validateEmail(v)?.tr();
+
+  String? _validatePhone(String? v) => ReviewContactScreen.validatePhone(v)?.tr();
+
+  String? _validateWebsite(String? v) => ReviewContactScreen.validateWebsite(v)?.tr();
+
+  Widget? _buildFormatIndicator(String? fieldKey, TextEditingController controller) {
+    if (fieldKey != 'email' && fieldKey != 'phone' && fieldKey != 'website') {
+      return null;
+    }
+
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        final text = value.text.trim();
+        if (text.isEmpty) return const SizedBox.shrink();
+
+        bool isValid = false;
+        if (fieldKey == 'email') {
+          isValid = _validateEmail(text) == null;
+        } else if (fieldKey == 'phone') {
+          isValid = _validatePhone(text) == null;
+        } else if (fieldKey == 'website') {
+          isValid = _validateWebsite(text) == null;
+        }
+
+        return Padding(
+          padding: const EdgeInsets.only(right: 6.0),
+          child: Tooltip(
+            message: isValid ? "Valid format".tr() : "Check format".tr(),
+            child: Icon(
+              isValid ? LucideIcons.checkCircle2 : LucideIcons.alertCircle,
+              color: isValid ? EventzoneTheme.accentSuccess : Colors.amberAccent,
+              size: 16,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildTextField(
     String label,
     TextEditingController controller,
@@ -537,6 +712,8 @@ class _ReviewContactScreenState extends State<ReviewContactScreen> {
             labelStyle: TextStyle(color: Colors.white30, fontSize: 13),
             border: InputBorder.none,
             contentPadding: EdgeInsets.symmetric(vertical: 8),
+            suffixIcon: _buildFormatIndicator(fieldKey, controller),
+            suffixIconConstraints: const BoxConstraints(minWidth: 24, minHeight: 24),
           ),
         ),
       ),
