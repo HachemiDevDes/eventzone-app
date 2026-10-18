@@ -537,5 +537,8 @@
   "Upcoming": "القادمة",
   "Requests": "الطلبات",
   "Received": "المستلمة",
-  "Sent": "المرسلة"
+  "Sent": "المرسلة",
+  "View all": "عرض الكل",
+  "View all sessions": "عرض جميع الجلسات",
+  "sessions": "جلسات"
 }

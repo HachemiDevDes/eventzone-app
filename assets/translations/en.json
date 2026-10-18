@@ -535,5 +535,8 @@
   "Upcoming": "Upcoming",
   "Requests": "Requests",
   "Received": "Received",
-  "Sent": "Sent"
+  "Sent": "Sent",
+  "View all": "View all",
+  "View all sessions": "View all sessions",
+  "sessions": "sessions"
 }

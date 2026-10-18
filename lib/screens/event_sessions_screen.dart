@@ -25,49 +25,75 @@ class _EventSessionsScreenState extends ConsumerState<EventSessionsScreen> {
     final sessionsAsync = ref.watch(sessionsProvider(widget.eventId));
     final favoritesAsync = ref.watch(sessionFavoritesProvider);
 
+    final canPop = Navigator.canPop(context);
+
     return Scaffold(
       body: EventzoneTheme.buildPlayfulBackground(
         child: SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(height: 72),
+              SizedBox(height: canPop ? 12 : 72),
               
               // Header
               Padding(
-                padding: EdgeInsets.symmetric(horizontal: 24.0, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "SCHEDULE".tr(),
-                          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                                color: EventzoneTheme.primaryAction,
-                                letterSpacing: 2,
+                    if (canPop)
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        behavior: HitTestBehavior.opaque,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(LucideIcons.arrowLeft, color: Colors.white, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                "Back".tr(),
+                                style: const TextStyle(color: Colors.white70, fontSize: 14),
                               ),
+                            ],
+                          ),
                         ),
-                        SizedBox(height: 8),
-                        Text(
-                          "Sessions & Agenda".tr(),
-                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 28,
-                              ),
+                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "SCHEDULE".tr(),
+                              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                    color: EventzoneTheme.primaryAction,
+                                    letterSpacing: 2,
+                                  ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              "Sessions & Agenda".tr(),
+                              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 28,
+                                  ),
+                            ),
+                          ],
+                        ),
+                        IconButton(
+                          icon: const Icon(LucideIcons.calendarClock, color: Colors.white, size: 24),
+                          tooltip: "My Meetings".tr(),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const MyMeetingsScreen()),
+                            );
+                          },
                         ),
                       ],
-                    ),
-                    IconButton(
-                      icon: Icon(LucideIcons.calendarClock, color: Colors.white, size: 24),
-                      tooltip: "My Meetings".tr(),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => MyMeetingsScreen()),
-                        );
-                      },
                     ),
                   ],
                 ),

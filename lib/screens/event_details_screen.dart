@@ -22,6 +22,8 @@ import '../widgets/ticket_selection_sheet.dart';
 import '../widgets/ticket_registration_dialog.dart';
 import 'event_speakers_screen.dart';
 import 'event_partners_screen.dart';
+import 'event_sessions_screen.dart';
+import 'session_detail_screen.dart';
 
 class EventDetailsScreen extends StatefulWidget {
   final EventModel event;
@@ -645,161 +647,358 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
     );
   }
 
+  void _navigateToAllSessions() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EventSessionsScreen(eventId: widget.event.id),
+      ),
+    );
+  }
+
   // ─────────────────────────────────────────────
   //  AGENDA / SESSIONS SECTION
   // ─────────────────────────────────────────────
   Widget _buildAgendaSection() {
     if (_sessions.isEmpty) return const SizedBox.shrink();
 
+    final hasMore = _sessions.length > 2;
+    final displayedSessions = hasMore ? _sessions.take(2).toList() : _sessions;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 32),
         Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text(
-              "Schedule & Agenda".tr(),
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 20),
+            Row(
+              children: [
+                Text(
+                  "Schedule & Agenda".tr(),
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white10,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    "${_sessions.length}",
+                    style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.white10,
-                borderRadius: BorderRadius.circular(10),
+            if (hasMore)
+              GestureDetector(
+                onTap: _navigateToAllSessions,
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        "View all".tr(),
+                        style: const TextStyle(
+                          color: EventzoneTheme.primaryAction,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(LucideIcons.chevronRight, size: 14, color: EventzoneTheme.primaryAction),
+                    ],
+                  ),
+                ),
               ),
-              child: Text(
-                "${_sessions.length}",
-                style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
-              ),
-            ),
           ],
         ),
         const SizedBox(height: 16),
-        ListView.separated(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: _sessions.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 12),
-          itemBuilder: (context, index) {
-            final session = _sessions[index];
-            final startTime = DateFormat('HH:mm').format(session.startTime.toLocal());
-            final endTime = DateFormat('HH:mm').format(session.endTime.toLocal());
-            final timeStr = "$startTime — $endTime";
 
-            return GlassContainer(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        if (!hasMore)
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: displayedSessions.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 12),
+            itemBuilder: (context, index) => _buildSessionCard(displayedSessions[index]),
+          )
+        else
+          Stack(
+            children: [
+              Column(
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: EventzoneTheme.primaryAction.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              session.resolveDayLabel(_sessions),
-                              style: const TextStyle(
-                                color: EventzoneTheme.primaryAction,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            const Icon(LucideIcons.clock, color: EventzoneTheme.primaryAction, size: 12),
-                            const SizedBox(width: 4),
-                            Text(
-                              timeStr,
-                              style: const TextStyle(
-                                color: EventzoneTheme.primaryAction,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (session.track != null && session.track!.isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.white10,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            session.track!,
-                            style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ],
-                      if (session.location != null && session.location!.isNotEmpty) ...[
-                        const Spacer(),
-                        Row(
-                          children: [
-                            const Icon(LucideIcons.mapPin, color: Colors.white38, size: 12),
-                            const SizedBox(width: 4),
-                            Text(
-                              session.location!,
-                              style: const TextStyle(color: Colors.white54, fontSize: 11),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    session.title,
-                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  if (session.description != null && session.description!.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      session.description!,
-                      style: const TextStyle(color: Colors.white60, fontSize: 13, height: 1.3),
-                    ),
-                  ],
-                  if (session.speakers.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: session.speakers.map((spk) {
-                        return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF141927),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.white12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _buildSpeakerMiniAvatar(spk.avatarUrl, spk.name),
-                              const SizedBox(width: 6),
-                              Text(
-                                spk.name,
-                                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                              ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
+                  _buildSessionCard(displayedSessions[0]),
+                  const SizedBox(height: 12),
+                  _buildSessionCard(displayedSessions[1]),
                 ],
               ),
-            );
-          },
-        ),
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  height: 140,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        EventzoneTheme.backgroundStart.withValues(alpha: 0.0),
+                        EventzoneTheme.backgroundStart.withValues(alpha: 0.85),
+                        EventzoneTheme.backgroundStart,
+                      ],
+                      stops: const [0.0, 0.45, 1.0],
+                    ),
+                  ),
+                  alignment: Alignment.bottomCenter,
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: EventzoneTheme.primaryAction.withValues(alpha: 0.35),
+                          blurRadius: 18,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ElevatedButton(
+                      onPressed: _navigateToAllSessions,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: EventzoneTheme.primaryAction,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(LucideIcons.calendarDays, size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            "${'View all'.tr()} ${_sessions.length} ${'sessions'.tr()}",
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Icon(LucideIcons.arrowRight, size: 16),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
       ],
+    );
+  }
+
+  Widget _buildSessionCard(SessionModel session) {
+    final startTime = DateFormat('HH:mm').format(session.startTime.toLocal());
+    final endTime = DateFormat('HH:mm').format(session.endTime.toLocal());
+    final timeStr = "$startTime — $endTime";
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => SessionDetailScreen(session: session),
+          ),
+        );
+      },
+      child: GlassContainer(
+        padding: const EdgeInsets.all(18),
+        borderRadius: 20,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Top badges (Wrap avoids horizontal overflow with long tracks)
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+                  decoration: BoxDecoration(
+                    color: EventzoneTheme.primaryAction.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: EventzoneTheme.primaryAction.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        session.resolveDayLabel(_sessions),
+                        style: const TextStyle(
+                          color: EventzoneTheme.primaryAction,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Icon(LucideIcons.clock, color: EventzoneTheme.primaryAction, size: 12),
+                      const SizedBox(width: 4),
+                      Text(
+                        timeStr,
+                        style: const TextStyle(
+                          color: EventzoneTheme.primaryAction,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (session.track != null && session.track!.trim().isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4.5),
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: Text(
+                      session.track!.trim(),
+                      style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                if (session.location != null && session.location!.trim().isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4.5),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(LucideIcons.mapPin, color: Colors.white38, size: 11),
+                        const SizedBox(width: 4),
+                        Text(
+                          session.location!.trim(),
+                          style: const TextStyle(color: Colors.white60, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              session.title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                height: 1.25,
+              ),
+            ),
+            if (session.description != null && session.description!.trim().isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                session.description!.trim(),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white60,
+                  fontSize: 13,
+                  height: 1.35,
+                ),
+              ),
+            ],
+            if (session.speakers.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF131929),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                child: Column(
+                  children: session.speakers.map((spk) {
+                    final subtitle = spk.title.isNotEmpty && spk.company.isNotEmpty
+                        ? "${spk.title} • ${spk.company}"
+                        : (spk.title.isNotEmpty ? spk.title : spk.company);
+
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          _buildSpeakerAvatar(spk.avatarUrl, spk.name, size: 44),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  spk.name,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                if (subtitle.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    subtitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white60,
+                                      fontSize: 11.5,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          if (spk.role != null && spk.role!.isNotEmpty && spk.role != 'Speaker')
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: EventzoneTheme.primaryAction.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: EventzoneTheme.primaryAction.withValues(alpha: 0.3)),
+                              ),
+                              child: Text(
+                                spk.role!,
+                                style: const TextStyle(
+                                  color: EventzoneTheme.primaryAction,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -1302,22 +1501,6 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
       );
     }
     return _buildFallbackSpeakerAvatar(name, size);
-  }
-
-  Widget _buildSpeakerMiniAvatar(String? avatarUrl, String name) {
-    if (avatarUrl != null && avatarUrl.isNotEmpty && !avatarUrl.contains('ui-avatars.com')) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Image.network(
-          avatarUrl,
-          width: 20,
-          height: 20,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) => const Icon(LucideIcons.user, size: 14, color: Colors.white54),
-        ),
-      );
-    }
-    return const Icon(LucideIcons.user, size: 14, color: Colors.white54);
   }
 
   Widget _buildFallbackSpeakerAvatar(String name, double size) {
