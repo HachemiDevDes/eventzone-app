@@ -1277,7 +1277,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
             width: size,
             height: size,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _buildFallbackSpeakerAvatar(name, size),
+            errorBuilder: (context, error, stackTrace) => _buildFallbackSpeakerAvatar(name, size),
             loadingBuilder: (context, child, loadingProgress) {
               if (loadingProgress == null) return child;
               return Container(
@@ -1313,7 +1313,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen> {
           width: 20,
           height: 20,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => const Icon(LucideIcons.user, size: 14, color: Colors.white54),
+          errorBuilder: (context, error, stackTrace) => const Icon(LucideIcons.user, size: 14, color: Colors.white54),
         ),
       );
     }
