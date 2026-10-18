@@ -531,5 +531,9 @@
   "Meeting cancelled.": "Meeting cancelled.",
   "Meeting request cancelled.": "Meeting request cancelled.",
   "Waiting for response...": "Waiting for response...",
-  "Meetings": "Meetings"
+  "Meetings": "Meetings",
+  "Upcoming": "Upcoming",
+  "Requests": "Requests",
+  "Received": "Received",
+  "Sent": "Sent"
 }

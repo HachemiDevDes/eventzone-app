@@ -1142,18 +1142,22 @@ class _MyNetworkScreenState extends ConsumerState<MyNetworkScreen> {
         children: [
           Row(
             children: [
-              _buildSubTabChip(
-                "Received".tr(),
-                _incomingRequests.length,
-                _requestsSubTab == RequestsSubTab.received,
-                () => setState(() => _requestsSubTab = RequestsSubTab.received),
+              Expanded(
+                child: _buildSubTabChip(
+                  "Received".tr(),
+                  _incomingRequests.length,
+                  _requestsSubTab == RequestsSubTab.received,
+                  () => setState(() => _requestsSubTab = RequestsSubTab.received),
+                ),
               ),
               const SizedBox(width: 8),
-              _buildSubTabChip(
-                "Sent".tr(),
-                _sentRequests.length,
-                _requestsSubTab == RequestsSubTab.sent,
-                () => setState(() => _requestsSubTab = RequestsSubTab.sent),
+              Expanded(
+                child: _buildSubTabChip(
+                  "Sent".tr(),
+                  _sentRequests.length,
+                  _requestsSubTab == RequestsSubTab.sent,
+                  () => setState(() => _requestsSubTab = RequestsSubTab.sent),
+                ),
               ),
             ],
           ),
@@ -1183,35 +1187,41 @@ class _MyNetworkScreenState extends ConsumerState<MyNetworkScreen> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
         decoration: BoxDecoration(
           color: isSelected
               ? EventzoneTheme.primaryAction
-              : Colors.white.withOpacity(0.05),
+              : Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: isSelected ? EventzoneTheme.primaryAction : Colors.white12,
           ),
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.max,
           children: [
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.white : Colors.white70,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                fontSize: 13,
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.white70,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  fontSize: 13,
+                ),
               ),
             ),
             if (count > 0) ...[
               const SizedBox(width: 6),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? Colors.white.withOpacity(0.25)
-                      : Colors.white.withOpacity(0.1),
+                      ? Colors.white.withValues(alpha: 0.25)
+                      : Colors.white.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
@@ -1499,27 +1509,27 @@ class _MyNetworkScreenState extends ConsumerState<MyNetworkScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Sub-tabs row: Upcoming Meetings vs Meeting Requests
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            child: Row(
-              children: [
-                _buildSubTabChip(
-                  "Upcoming Meetings".tr(),
+          // Sub-tabs row: Upcoming vs Requests
+          Row(
+            children: [
+              Expanded(
+                child: _buildSubTabChip(
+                  "Upcoming".tr(),
                   _upcomingMeetings.length,
                   _meetingsSubTab == MeetingsSubTab.upcoming,
                   () => setState(() => _meetingsSubTab = MeetingsSubTab.upcoming),
                 ),
-                const SizedBox(width: 8),
-                _buildSubTabChip(
-                  "Meeting Requests".tr(),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildSubTabChip(
+                  "Requests".tr(),
                   totalRequests,
                   _meetingsSubTab == MeetingsSubTab.requests,
                   () => setState(() => _meetingsSubTab = MeetingsSubTab.requests),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
           const SizedBox(height: 18),
 
@@ -1536,18 +1546,22 @@ class _MyNetworkScreenState extends ConsumerState<MyNetworkScreen> {
             // Secondary filter for Requests: Received vs Sent
             Row(
               children: [
-                _buildMeetingFilterChip(
-                  "Received".tr(),
-                  _receivedMeetingRequests.length,
-                  _meetingRequestsFilter == MeetingRequestsSubFilter.received,
-                  () => setState(() => _meetingRequestsFilter = MeetingRequestsSubFilter.received),
+                Expanded(
+                  child: _buildMeetingFilterChip(
+                    "Received".tr(),
+                    _receivedMeetingRequests.length,
+                    _meetingRequestsFilter == MeetingRequestsSubFilter.received,
+                    () => setState(() => _meetingRequestsFilter = MeetingRequestsSubFilter.received),
+                  ),
                 ),
                 const SizedBox(width: 8),
-                _buildMeetingFilterChip(
-                  "Sent".tr(),
-                  _sentMeetingRequests.length,
-                  _meetingRequestsFilter == MeetingRequestsSubFilter.sent,
-                  () => setState(() => _meetingRequestsFilter = MeetingRequestsSubFilter.sent),
+                Expanded(
+                  child: _buildMeetingFilterChip(
+                    "Sent".tr(),
+                    _sentMeetingRequests.length,
+                    _meetingRequestsFilter == MeetingRequestsSubFilter.sent,
+                    () => setState(() => _meetingRequestsFilter = MeetingRequestsSubFilter.sent),
+                  ),
                 ),
               ],
             ),
@@ -1571,7 +1585,7 @@ class _MyNetworkScreenState extends ConsumerState<MyNetworkScreen> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected
               ? const Color(0xFF2563EB)
@@ -1582,14 +1596,20 @@ class _MyNetworkScreenState extends ConsumerState<MyNetworkScreen> {
           ),
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.max,
           children: [
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.white : Colors.white70,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                fontSize: 12.5,
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.white70,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  fontSize: 12.5,
+                ),
               ),
             ),
             if (count > 0) ...[

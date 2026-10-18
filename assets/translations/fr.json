@@ -533,5 +533,9 @@
   "Meeting cancelled.": "Réunion annulée.",
   "Meeting request cancelled.": "Demande de réunion annulée.",
   "Waiting for response...": "En attente de réponse...",
-  "Meetings": "Réunions"
+  "Meetings": "Réunions",
+  "Upcoming": "À venir",
+  "Requests": "Demandes",
+  "Received": "Reçues",
+  "Sent": "Envoyées"
 }
