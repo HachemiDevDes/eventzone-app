@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -72,23 +71,25 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> with SingleTicker
         accessToken: accessToken,
       );
     } catch (e) {
-      debugPrint("Native Google Sign-In error: $e");
-      if (mounted) {
-        final errString = e.toString();
-        String userFriendlyError = "Google sign-in failed. Please try again.".tr();
-        if (errString.contains("10:") || errString.contains("DEVELOPER_ERROR")) {
-          userFriendlyError = "Google Play Services verification error (code 10). Please ensure Google Play App Signing SHA-1 fingerprint is registered in Google Cloud Console.";
-        }
-        final errorMessage = kDebugMode
-            ? "Google sign-in error: $e"
-            : userFriendlyError;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: Colors.redAccent,
-            behavior: SnackBarBehavior.floating,
-          ),
+      debugPrint("Native Google Sign-In error: $e. Attempting web OAuth fallback...");
+      try {
+        // Seamless fallback to Supabase Web OAuth if native Play Services fails (e.g. Code 10 SHA-1 mismatch)
+        final supabase = ref.read(supabaseProvider);
+        await supabase.auth.signInWithOAuth(
+          OAuthProvider.google,
+          redirectTo: 'eventzone://login-callback',
         );
+      } catch (fallbackError) {
+        debugPrint("Google OAuth fallback error: $fallbackError");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Google sign-in failed. Please try again.".tr()),
+              backgroundColor: Colors.redAccent,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       }
     } finally {
       if (mounted) {
