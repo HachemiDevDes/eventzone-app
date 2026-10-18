@@ -320,13 +320,22 @@ class _EventSpeakersScreenState extends ConsumerState<EventSpeakersScreen> {
 
   Widget _buildSpeakerAvatar(SessionSpeaker speaker, {required double size}) {
     final avatarUrl = speaker.avatarUrl.trim();
-    if (avatarUrl.isNotEmpty && (avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://'))) {
+    if (avatarUrl.isNotEmpty &&
+        (avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://')) &&
+        !avatarUrl.contains('ui-avatars.com')) {
       return Container(
         width: size,
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: Border.all(color: EventzoneTheme.primaryAction.withValues(alpha: 0.3), width: 1.5),
+          border: Border.all(color: const Color(0xFF2563EB).withValues(alpha: 0.45), width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF2563EB).withValues(alpha: 0.15),
+              blurRadius: 8,
+              spreadRadius: 1,
+            ),
+          ],
         ),
         child: ClipOval(
           child: Image.network(
