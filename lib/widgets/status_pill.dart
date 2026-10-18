@@ -48,13 +48,17 @@ class StatusPill extends StatelessWidget {
               ),
             ).animate(onPlay: (controller) => controller.repeat(reverse: true))
              .fade(begin: 0.3, end: 1.0, duration: 800.ms),
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.5,
+          Flexible(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],

@@ -72,7 +72,7 @@ class _MyAgendaScreenState extends ConsumerState<MyAgendaScreen> with SingleTick
                 child: Container(
                   height: 48,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.04),
+                    color: Colors.white.withValues(alpha: 0.04),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: Colors.white12),
                   ),
@@ -193,9 +193,9 @@ class _MyAgendaScreenState extends ConsumerState<MyAgendaScreen> with SingleTick
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                   decoration: BoxDecoration(
-                                    color: EventzoneTheme.primaryAction.withOpacity(0.15),
+                                    color: EventzoneTheme.primaryAction.withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: EventzoneTheme.primaryAction.withOpacity(0.35)),
+                                    border: Border.all(color: EventzoneTheme.primaryAction.withValues(alpha: 0.35)),
                                   ),
                                   child: Text(
                                     dayLabel,
@@ -219,53 +219,63 @@ class _MyAgendaScreenState extends ConsumerState<MyAgendaScreen> with SingleTick
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Day & Date Pill
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withOpacity(0.06),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(color: Colors.white10),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(LucideIcons.calendar, size: 10, color: Colors.white60),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            fullDayLabel,
-                                            style: const TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 10.5,
-                                              fontWeight: FontWeight.w700,
+                                // Day & Date Pill and Track (Flexible Wrap prevents overflow on any screen)
+                                LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    return Wrap(
+                                      spacing: 6,
+                                      runSpacing: 6,
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.06),
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(color: Colors.white10),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(LucideIcons.calendar, size: 10, color: Colors.white60),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                fullDayLabel,
+                                                style: const TextStyle(
+                                                  color: Colors.white70,
+                                                  fontSize: 10.5,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (session.track != null && session.track!.trim().isNotEmpty)
+                                          Container(
+                                            constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+                                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                            decoration: BoxDecoration(
+                                              color: EventzoneTheme.primaryAction.withValues(alpha: 0.12),
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: EventzoneTheme.primaryAction.withValues(alpha: 0.25),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              session.track!.trim().toUpperCase(),
+                                              style: const TextStyle(
+                                                color: EventzoneTheme.primaryAction,
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.w800,
+                                                letterSpacing: 0.5,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
-                                        ],
-                                      ),
-                                    ),
-                                    if (session.track != null && session.track!.isNotEmpty) ...[
-                                      const SizedBox(width: 6),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                                        decoration: BoxDecoration(
-                                          color: EventzoneTheme.primaryAction.withOpacity(0.12),
-                                          borderRadius: BorderRadius.circular(6),
-                                          border: Border.all(color: EventzoneTheme.primaryAction.withOpacity(0.25)),
-                                        ),
-                                        child: Text(
-                                          session.track!.toUpperCase(),
-                                          style: const TextStyle(
-                                            color: EventzoneTheme.primaryAction,
-                                            fontSize: 9.5,
-                                            fontWeight: FontWeight.w800,
-                                            letterSpacing: 0.5,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
+                                      ],
+                                    );
+                                  },
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
@@ -294,35 +304,38 @@ class _MyAgendaScreenState extends ConsumerState<MyAgendaScreen> with SingleTick
                                     ),
                                   ],
                                 ),
-                                SizedBox(height: 12),
+                                const SizedBox(height: 12),
                                 Row(
                                   children: [
                                     if (session.speakers.isNotEmpty) ...[
                                       CircleAvatar(
-                                        radius: 9,
+                                        radius: 13,
                                         backgroundImage: session.speakers.first.avatarUrl.isNotEmpty
                                             ? NetworkImage(session.speakers.first.avatarUrl)
                                             : null,
                                         child: session.speakers.first.avatarUrl.isEmpty
-                                            ? Icon(LucideIcons.user, size: 8, color: Colors.white)
+                                            ? const Icon(LucideIcons.user, size: 12, color: Colors.white)
                                             : null,
                                       ),
-                                      SizedBox(width: 8),
+                                      const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(
-                                          session.speakers.first.name,
-                                          style: TextStyle(fontSize: 11, color: Colors.white70),
+                                          session.speakers.first.name +
+                                              (session.speakers.length > 1
+                                                  ? " +${session.speakers.length - 1}"
+                                                  : ""),
+                                          style: const TextStyle(fontSize: 11.5, color: Colors.white70),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
                                     ] else
-                                      Spacer(),
+                                      const Spacer(),
                                     GestureDetector(
                                       onTap: () {
                                         ref.read(sessionFavoritesProvider.notifier).toggleFavorite(session.id);
                                       },
-                                      child: Icon(
+                                      child: const Icon(
                                         LucideIcons.bookmarkCheck,
                                         size: 20,
                                         color: EventzoneTheme.accentSuccess,
